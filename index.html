@@ -1,0 +1,2796 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SECUDEX — Квантовый Катализатор 3D</title>
+<meta name="description" content="SECUDEX — Интерактивный 3D процесс анализа договора четырьмя ИИ-техносферами">
+<meta property="og:title" content="SECUDEX — Квантовый Катализатор 3D">
+<meta property="og:description" content="SECUDEX — Интерактивный 3D процесс анализа договора четырьмя ИИ-техносферами">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #030108;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #f8fafc;
+    touch-action: none;
+  }
+  #canvas-container { position: fixed; inset: 0; z-index: 1; }
+
+  /* Верхняя панель РИСК слева вверху, чтобы не перекрывать верхнюю сферу флагмана */
+  #risk-panel {
+    position: fixed; top: 10px; left: 10px;
+    width: min(92vw, 355px);
+    background: rgba(14, 7, 22, 0.88);
+    border: 1px solid rgba(255, 59, 92, 0.42);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+    border-radius: 14px;
+    padding: 9px 12px;
+    z-index: 12;
+  }
+  .risk-header {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  }
+  .risk-title-group {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .risk-title {
+    font-weight: 900; letter-spacing: 3px; font-size: 15px;
+    color: #ff3b5c;
+  }
+  .stage-label {
+    font-size: 11px; font-weight: 600; color: #c4b5fd;
+    background: rgba(109, 40, 217, 0.25);
+    border: 1px solid rgba(167, 139, 250, 0.35);
+    border-radius: 6px; padding: 2px 8px;
+  }
+  .risk-actions {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .risk-badge {
+    background: rgba(255, 59, 92, 0.16);
+    border: 1px solid rgba(255, 59, 92, 0.45);
+    border-radius: 999px; padding: 3px 11px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.8px; color: #fecdd3;
+  }
+  #reset-btn {
+    background: rgba(56, 189, 248, 0.14);
+    border: 1px solid rgba(56, 189, 248, 0.45);
+    color: #bae6fd; font-size: 11px; font-weight: 700;
+    padding: 4px 10px; border-radius: 999px; cursor: pointer;
+  }
+  #reset-btn:hover { background: rgba(56, 189, 248, 0.25); }
+  #risk-hint {
+    margin-top: 6px; font-size: 12px; color: #cbd5e1; text-align: center;
+  }
+  #risk-list {
+    margin-top: 7px; max-height: 92px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  #risk-list:empty { display: none; }
+  .risk-item {
+    background: rgba(40, 10, 24, 0.82);
+    border: 1px solid rgba(255, 65, 95, 0.35);
+    border-radius: 8px; padding: 6px 10px;
+    font-size: 11px; line-height: 1.35; color: #ffe4e8;
+  }
+  .risk-item b { color: #ff4d6d; }
+
+  /* Кинематографическое затемнение-коллапс и финальный логотип SECUDEX */
+  #iris-overlay {
+    position: fixed; inset: 0; z-index: 15; pointer-events: none;
+    background: radial-gradient(circle at center, transparent 0%, #030108 100%);
+    opacity: 0;
+    transition: opacity 0.25s ease;
+  }
+  #final-logo-screen {
+    position: fixed; inset: 0; z-index: 16; pointer-events: none;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(3, 1, 8, 0.96);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.22s ease, visibility 0.22s ease;
+  }
+  #final-logo-screen.visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+  #final-logo-canvas {
+    width: min(72vw, 440px);
+    height: auto;
+    filter: drop-shadow(0 0 28px rgba(96, 165, 250, 0.45));
+  }
+  #final-subtitle {
+    margin-top: 14px;
+    font-size: 13px; letter-spacing: 2.5px; text-transform: uppercase;
+    color: #a5b4fc; font-weight: 600; text-align: center; padding: 0 16px;
+  }
+  #final-replay-btn {
+    margin-top: 24px;
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+    border: 1px solid rgba(196, 181, 253, 0.65);
+    color: #ffffff; font-size: 13px; font-weight: 800; letter-spacing: 1.5px;
+    padding: 11px 26px; border-radius: 999px; cursor: pointer;
+    box-shadow: 0 0 24px rgba(124, 58, 237, 0.5);
+  }
+  #final-replay-btn:hover { filter: brightness(1.12); }
+
+  /* Нижний единый док управления слайдами и аудио */
+  #bottom-dock-wrap {
+    position: fixed; bottom: 8px; left: 50%; transform: translateX(-50%);
+    width: min(95vw, 720px);
+    z-index: 20;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    transition: transform 0.3s ease;
+  }
+  #bottom-dock-wrap.collapsed {
+    transform: translate(-50%, calc(100% - 26px));
+  }
+  #dock-toggle-btn {
+    background: rgba(15, 10, 28, 0.9);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    color: #cbd5e1; font-size: 10px; font-weight: 700;
+    padding: 3px 12px; border-radius: 999px; cursor: pointer;
+  }
+  #bottom-dock {
+    width: 100%;
+    background: rgba(12, 8, 24, 0.92);
+    border: 1px solid rgba(139, 92, 246, 0.42);
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.65);
+    border-radius: 14px;
+    padding: 8px 10px;
+    display: flex; flex-direction: column; gap: 7px;
+  }
+  .dock-primary-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  }
+  #primary-action-btn {
+    flex: 1 1 220px;
+    background: linear-gradient(135deg, #0ea5e9, #7c3aed);
+    border: 1px solid rgba(196, 181, 253, 0.65);
+    color: #ffffff; font-size: 12px; font-weight: 800; letter-spacing: 1.2px;
+    padding: 10px 16px; border-radius: 10px; cursor: pointer;
+    text-transform: uppercase;
+  }
+  #primary-action-btn:disabled {
+    opacity: 0.45; cursor: default;
+    background: rgba(51, 65, 85, 0.65); border-color: rgba(148, 163, 184, 0.25);
+  }
+  #pause-btn, #audio-drawer-btn {
+    background: rgba(30, 20, 54, 0.9);
+    border: 1px solid rgba(139, 92, 246, 0.45);
+    color: #e2e8f0; font-size: 11px; font-weight: 700;
+    padding: 9px 12px; border-radius: 10px; cursor: pointer;
+  }
+  #pause-btn:disabled { opacity: 0.4; cursor: default; }
+
+  .slide-tabs {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+  }
+  .slide-btn {
+    background: rgba(24, 16, 44, 0.85);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    color: #cbd5e1; font-size: 11px; font-weight: 600;
+    padding: 7px 6px; border-radius: 8px; cursor: pointer;
+    text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .slide-btn.active {
+    background: rgba(109, 40, 217, 0.45);
+    border-color: #38bdf8;
+    color: #ffffff;
+  }
+
+  /* Поле/панель для вставки и запуска аудио-дорожек озвучки */
+  #audio-drawer {
+    display: none;
+    border-top: 1px solid rgba(139, 92, 246, 0.25);
+    padding-top: 8px;
+    flex-direction: column; gap: 6px;
+  }
+  #audio-drawer.open { display: flex; }
+  .audio-status-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 11px; color: #93c5fd;
+  }
+  .audio-slots {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
+  }
+  @media (max-width: 600px) {
+    .audio-slots { grid-template-columns: 1fr; }
+    .slide-tabs { grid-template-columns: repeat(2, 1fr); }
+  }
+  .audio-slot {
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    background: rgba(18, 12, 34, 0.9);
+    border: 1px solid rgba(100, 116, 139, 0.35);
+    border-radius: 8px; padding: 5px 8px; font-size: 11px;
+  }
+  .audio-slot.playing { border-color: #38bdf8; color: #e0f2fe; }
+  .audio-slot label {
+    cursor: pointer; color: #38bdf8; font-weight: 700; white-space: nowrap;
+  }
+  .audio-slot input[type="file"] { display: none; }
+  .audio-slot-name {
+    color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px;
+  }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body data-stage="intro" data-threats="0" data-audio-track="intro">
+
+<div id="risk-panel">
+  <div class="risk-header">
+    <div class="risk-title-group">
+      <div class="risk-title">РИСК</div>
+      <div class="stage-label" id="stage-label">Обзор пространства</div>
+    </div>
+    <div class="risk-actions">
+      <div class="risk-badge" id="threat-count">УГРОЗ: 0 / 5</div>
+      <button id="reset-btn" type="button">СБРОС</button>
+    </div>
+  </div>
+  <div id="risk-hint">Этап 0: Монументальный обзор катализатора и техносфер ИИ</div>
+  <div id="risk-list"></div>
+</div>
+
+<div id="iris-overlay"></div>
+<div id="final-logo-screen">
+  <canvas id="final-logo-canvas" width="1024" height="512"></canvas>
+  <div id="final-subtitle">Глобальный анализ завершён • Система SECUDEX активна</div>
+  <button id="final-replay-btn" type="button">ПОВТОРИТЬ СЦЕНУ</button>
+</div>
+
+<div id="bottom-dock-wrap">
+  <button id="dock-toggle-btn" type="button" aria-expanded="true">Свернуть панель</button>
+  <div id="bottom-dock">
+    <div class="dock-primary-row">
+      <button id="primary-action-btn" type="button">ЗАПУСТИТЬ АНАЛИЗ</button>
+      <button id="pause-btn" type="button" disabled>Пауза скана</button>
+      <button id="audio-drawer-btn" type="button" aria-expanded="false">Озвучка: Вкл</button>
+    </div>
+
+    <div class="slide-tabs" role="tablist" aria-label="Слайды анимации">
+      <button class="slide-btn active" type="button" data-slide="0">1. Обзор</button>
+      <button class="slide-btn" type="button" data-slide="1">2. Скан агентами</button>
+      <button class="slide-btn" type="button" data-slide="2">3. Передача</button>
+      <button class="slide-btn" type="button" data-slide="3">4. Вердикт и импульс</button>
+    </div>
+
+    <!-- Место / слоты для вставки и запуска аудиодорожек озвучки на каждый этап -->
+    <div id="audio-drawer">
+      <div class="audio-status-bar">
+        <span id="audio-active-label">Активная дорожка: 01. Введение и обзор пространства</span>
+        <button id="audio-mute-btn" type="button" style="background:none;border:none;color:#38bdf8;font-weight:700;cursor:pointer;font-size:11px;">Звук: ВКЛ</button>
+      </div>
+      <div class="audio-slots">
+        <div class="audio-slot" data-track-slot="intro">
+          <span class="audio-slot-name" id="track-name-intro">01. Введение (слот)</span>
+          <label>Файл<input type="file" accept="audio/*" data-track-upload="intro" /></label>
+        </div>
+        <div class="audio-slot" data-track-slot="scan">
+          <span class="audio-slot-name" id="track-name-scan">02. Сканирование (слот)</span>
+          <label>Файл<input type="file" accept="audio/*" data-track-upload="scan" /></label>
+        </div>
+        <div class="audio-slot" data-track-slot="transfer">
+          <span class="audio-slot-name" id="track-name-transfer">03. Передача в сферу (слот)</span>
+          <label>Файл<input type="file" accept="audio/*" data-track-upload="transfer" /></label>
+        </div>
+        <div class="audio-slot" data-track-slot="finale">
+          <span class="audio-slot-name" id="track-name-finale">04. Вердикт и финал (слот)</span>
+          <label>Файл<input type="file" accept="audio/*" data-track-upload="finale" /></label>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="canvas-container" data-testid="secudex-3d-canvas"></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import {
+  STAGES,
+  STAGE_DURATIONS,
+  CONTRACT_PAGES,
+  CAMERA_LIMITS,
+  AUDIO_TRACKS,
+  getPageDuration,
+  getNextUserAction,
+  getSlideGroup,
+} from './timeline.js';
+
+const LOGO_ASSET_URL = '/assets/aistudio/SJmoFqjxktcBE2_s7xOueDeqy587oy99Ot1z7gbeKKnIrY2zsbBkL1zgb2IoWHCpMmqPzL6XRzkbhq-Kv8329mNh-1_1645ecf9.jpg';
+
+// Определение software WebGL (SwiftShader / llvmpipe) для стабильной работы в любом окружении
+const isSoftwareGl = (() => {
+  try {
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl2') || c.getContext('webgl');
+    if (!gl) return true;
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const param = ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER;
+    const gpu = String(gl.getParameter(param) || '');
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
+  } catch {
+    return true;
+  }
+})();
+
+// Предвыделенные временные векторы и матрицы (без аллокаций в цикле рендера)
+const _v1 = new THREE.Vector3();
+const _v2 = new THREE.Vector3();
+const _v3 = new THREE.Vector3();
+const _v4 = new THREE.Vector3();
+const _q1 = new THREE.Quaternion();
+const _up = new THREE.Vector3(0, 1, 0);
+
+// ---------------------------------------------------------------------------
+// 1. СЦЕНА, РЕНДЕРЕР, HIGH-CONTRAST STUDIO PMREM И КАМЕРА С ОГРАНИЧЕНИЯМИ
+// ---------------------------------------------------------------------------
+const container = document.getElementById('canvas-container');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x030109);
+scene.fog = new THREE.FogExp2(0x030109, 0.011);
+
+const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 220);
+const isMobile = window.innerWidth < 640;
+camera.position.set(0, -0.1, isMobile ? 20.5 : 16.5);
+
+const renderer = new THREE.WebGLRenderer({
+  antialias: !isSoftwareGl,
+  powerPreference: 'high-performance',
+});
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
+container.appendChild(renderer.domElement);
+
+function buildStudioSoftboxEnv() {
+  const envScene = new THREE.Scene();
+  envScene.background = new THREE.Color(0x04060e);
+
+  const disposables = [];
+  const addPanel = (w, h, colorHex, intensity, pos, rot) => {
+    const geo = new THREE.PlaneGeometry(w, h);
+    const mat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(colorHex).multiplyScalar(intensity),
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(...pos);
+    mesh.rotation.set(...rot);
+    envScene.add(mesh);
+    disposables.push(geo, mat);
+  };
+
+  // Темная космическая студия-ангар с контрастными узкими софтбоксами для четких бликов на фасках
+  const boxGeo = new THREE.BoxGeometry(36, 26, 36);
+  const boxMat = new THREE.MeshBasicMaterial({ color: 0x070a15, side: THREE.BackSide });
+  envScene.add(new THREE.Mesh(boxGeo, boxMat));
+  disposables.push(boxGeo, boxMat);
+
+  // Верхний вытянутый ключевой софтбокс (холодный титановый белый)
+  addPanel(18, 2.8, 0xe2e8f0, 4.2, [0, 12.2, 2.5], [Math.PI / 2, 0, 0]);
+  // Левый циановый контровой стрип
+  addPanel(2.4, 16, 0x38bdf8, 4.8, [-14.5, 2.0, -3.5], [0, Math.PI / 2, 0]);
+  // Правый фиолетово-аметистовый заполняющий стрип
+  addPanel(2.6, 15, 0xa855f7, 3.6, [14.5, 1.5, 1.0], [0, -Math.PI / 2, 0]);
+  // Передний верхний узкий световой акцент для оптики визора
+  addPanel(12, 1.3, 0xf8fafc, 2.8, [0, 7.5, 14.5], [0, Math.PI, 0]);
+  // Нижний глубокий индиго-отражатель
+  addPanel(20, 20, 0x1e1b4b, 0.9, [0, -11.5, 0], [-Math.PI / 2, 0, 0]);
+
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const rt = pmrem.fromScene(envScene, 0.032);
+  pmrem.dispose();
+  disposables.forEach(d => d.dispose());
+  return rt.texture;
+}
+scene.environment = buildStudioSoftboxEnv();
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = !isSoftwareGl;
+controls.dampingFactor = 0.06;
+controls.minDistance = CAMERA_LIMITS.minDistance;
+controls.maxDistance = CAMERA_LIMITS.maxDistance;
+controls.minAzimuthAngle = CAMERA_LIMITS.minAzimuthAngle;
+controls.maxAzimuthAngle = CAMERA_LIMITS.maxAzimuthAngle;
+controls.minPolarAngle = CAMERA_LIMITS.minPolarAngle;
+controls.maxPolarAngle = CAMERA_LIMITS.maxPolarAngle;
+controls.target.set(0, 2.65, -0.3);
+controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+
+let userInteracting = false;
+controls.addEventListener('start', () => { userInteracting = true; });
+controls.addEventListener('end', () => { userInteracting = false; });
+
+// ---------------------------------------------------------------------------
+// 2. АУДИО-МЕНЕДЖЕР ОЗВУЧКИ (СЛОТЫ ДЛЯ ВСТАВКИ АУДИОДОРОЖЕК НА КАЖДУЮ КНОПКУ)
+// ---------------------------------------------------------------------------
+const audioState = {
+  muted: false,
+  activeKey: 'intro',
+  player: new Audio(),
+  urls: {
+    intro: AUDIO_TRACKS.intro.url,
+    scan: AUDIO_TRACKS.scan.url,
+    transfer: AUDIO_TRACKS.transfer.url,
+    finale: AUDIO_TRACKS.finale.url,
+  },
+};
+audioState.player.preload = 'auto';
+
+function playVoiceTrack(trackKey) {
+  audioState.activeKey = trackKey;
+  document.body.setAttribute('data-audio-track', trackKey);
+  const meta = AUDIO_TRACKS[trackKey] || AUDIO_TRACKS.intro;
+  document.getElementById('audio-active-label').textContent = `Активная дорожка: ${meta.label}`;
+  document.querySelectorAll('.audio-slot').forEach(el => {
+    el.classList.toggle('playing', el.getAttribute('data-track-slot') === trackKey);
+  });
+
+  audioState.player.pause();
+  audioState.player.currentTime = 0;
+
+  const src = audioState.urls[trackKey];
+  if (src && !audioState.muted) {
+    audioState.player.src = src;
+    audioState.player.play().catch(() => {});
+  }
+}
+
+document.querySelectorAll('[data-track-upload]').forEach(input => {
+  input.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    const key = e.target.getAttribute('data-track-upload');
+    if (!file || !key) return;
+    if (audioState.urls[key]?.startsWith('blob:')) URL.revokeObjectURL(audioState.urls[key]);
+    audioState.urls[key] = URL.createObjectURL(file);
+    const nameEl = document.getElementById(`track-name-${key}`);
+    if (nameEl) nameEl.textContent = file.name;
+    if (audioState.activeKey === key) playVoiceTrack(key);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3. ОСВЕЩЕНИЕ СЦЕНЫ (С КОНТРАСТОМ ТЕПЛОГО КЛЮЧА И ХОЛОДНОГО ЗАПОЛНЕНИЯ)
+// ---------------------------------------------------------------------------
+const hemiLight = new THREE.HemisphereLight(0x8b5cf6, 0x0f172a, 0.9);
+scene.add(hemiLight);
+
+const keyLight = new THREE.DirectionalLight(0xf3e8ff, 2.3);
+keyLight.position.set(6, 12, 10);
+scene.add(keyLight);
+
+const rimLight = new THREE.DirectionalLight(0x38bdf8, 1.8);
+rimLight.position.set(-9, 5, -7);
+scene.add(rimLight);
+
+const bottomLight = new THREE.PointLight(0x7c3aed, 3.8, 22);
+bottomLight.position.set(0, -4.2, 4.5);
+scene.add(bottomLight);
+
+const flagshipLight = new THREE.PointLight(0x38bdf8, 5.5, 28);
+flagshipLight.position.set(0, 10.6, -1.4);
+scene.add(flagshipLight);
+
+function heightCanvasToNormalTex(canvas, strength = 2.6, repeatX = 1, repeatY = 1) {
+  const w = canvas.width;
+  const h = canvas.height;
+  const ctx = canvas.getContext('2d');
+  const src = ctx.getImageData(0, 0, w, h).data;
+  const out = new Uint8Array(w * h * 4);
+  const sampleH = (x, y) => {
+    const wx = ((x % w) + w) % w;
+    const wy = ((y % h) + h) % h;
+    return src[(wy * w + wx) * 4] / 255;
+  };
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const tl = sampleH(x - 1, y - 1);
+      const t  = sampleH(x,     y - 1);
+      const tr = sampleH(x + 1, y - 1);
+      const l  = sampleH(x - 1, y);
+      const r  = sampleH(x + 1, y);
+      const bl = sampleH(x - 1, y + 1);
+      const b  = sampleH(x,     y + 1);
+      const br = sampleH(x + 1, y + 1);
+
+      const dx = (tr + 2 * r + br) - (tl + 2 * l + bl);
+      const dy = (bl + 2 * b + br) - (tl + 2 * t + tr);
+      let nx = -dx * strength;
+      let ny = -dy * strength;
+      let nz = 1.0;
+      const len = Math.hypot(nx, ny, nz) || 1;
+      nx /= len; ny /= len; nz /= len;
+
+      const idx = (y * w + x) * 4;
+      out[idx] = Math.round((nx * 0.5 + 0.5) * 255);
+      out[idx + 1] = Math.round((ny * 0.5 + 0.5) * 255);
+      out[idx + 2] = Math.round((nz * 0.5 + 0.5) * 255);
+      out[idx + 3] = 255;
+    }
+  }
+  const tex = new THREE.DataTexture(out, w, h, THREE.RGBAFormat);
+  tex.colorSpace = THREE.NoColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeatX, repeatY);
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function createBrushedMetalMaps() {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 256;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#808080';
+  ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 1600; i++) {
+    const v = 96 + Math.floor(Math.random() * 68);
+    ctx.fillStyle = `rgb(${v},${v},${v})`;
+    ctx.fillRect(Math.random() * 256, Math.random() * 256, 28 + Math.random() * 64, 1);
+  }
+  const roughTex = new THREE.CanvasTexture(c);
+  roughTex.wrapS = roughTex.wrapT = THREE.RepeatWrapping;
+  roughTex.repeat.set(3, 3);
+  roughTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const normalTex = heightCanvasToNormalTex(c, 1.85, 3, 3);
+  return { roughTex, normalTex };
+}
+const { roughTex: metalTex, normalTex: metalNormalTex } = createBrushedMetalMaps();
+
+// ---------------------------------------------------------------------------
+// 4. КОСМОС И РАВНОМЕРНО РАССТАВЛЕННЫЕ ГАЛАКТИКИ БЕЗ ЛИШНЕГО ШУМА
+// ---------------------------------------------------------------------------
+function createBalancedSpace() {
+  const spaceGroup = new THREE.Group();
+
+  const starCount = 2200;
+  const sPos = new Float32Array(starCount * 3);
+  const sCol = new Float32Array(starCount * 3);
+  const palette = [
+    new THREE.Color(0xffffff),
+    new THREE.Color(0xc4b5fd),
+    new THREE.Color(0x93c5fd),
+    new THREE.Color(0xe879f9),
+  ];
+  for (let i = 0; i < starCount; i++) {
+    const r = 28 + Math.random() * 78;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    sPos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    sPos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta) + 8;
+    sPos[i * 3 + 2] = r * Math.cos(phi) - 10;
+    const col = palette[i % palette.length];
+    sCol[i * 3] = col.r; sCol[i * 3 + 1] = col.g; sCol[i * 3 + 2] = col.b;
+  }
+  const sGeo = new THREE.BufferGeometry();
+  sGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
+  sGeo.setAttribute('color', new THREE.BufferAttribute(sCol, 3));
+  spaceGroup.add(new THREE.Points(sGeo, new THREE.PointsMaterial({
+    size: 0.16, vertexColors: true, transparent: true, opacity: 0.85,
+  })));
+
+  const createGalaxy = (pos, rot, scale) => {
+    const count = 1600;
+    const gPos = new Float32Array(count * 3);
+    const gCol = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const arm = i % 3;
+      const dist = Math.pow(Math.random(), 1.35) * 9;
+      const angle = dist * 0.65 + (arm * Math.PI * 2) / 3 + (Math.random() - 0.5) * 0.4;
+      gPos[i * 3] = Math.cos(angle) * dist;
+      gPos[i * 3 + 1] = (Math.random() - 0.5) * (0.55 / (1 + dist * 0.3));
+      gPos[i * 3 + 2] = Math.sin(angle) * dist;
+
+      const c = dist < 2.1
+        ? new THREE.Color(0xffffff)
+        : (Math.random() > 0.45 ? new THREE.Color(0xa855f7) : new THREE.Color(0x60a5fa));
+      gCol[i * 3] = c.r; gCol[i * 3 + 1] = c.g; gCol[i * 3 + 2] = c.b;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(gPos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(gCol, 3));
+    const pts = new THREE.Points(geo, new THREE.PointsMaterial({
+      size: 0.15, vertexColors: true, transparent: true, opacity: 0.72,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    pts.position.set(...pos);
+    pts.rotation.set(...rot);
+    pts.scale.setScalar(scale);
+    spaceGroup.add(pts);
+    return pts;
+  };
+
+  // Симметричное / равномерное обрамление новой монументальной сцены
+  const gLeftTop = createGalaxy([-21, 13, -38], [0.65, 0.25, 0.35], 1.25);
+  const gRightTop = createGalaxy([21, 13, -38], [0.65, -0.25, -0.35], 1.25);
+  const gLeftLow = createGalaxy([-18, -5, -42], [-0.45, 0.3, -0.2], 1.15);
+  const gRightLow = createGalaxy([18, -5, -42], [-0.45, -0.3, 0.2], 1.15);
+
+  scene.add(spaceGroup);
+  return { spaceGroup, galaxies: [gLeftTop, gRightTop, gLeftLow, gRightLow] };
+}
+const spaceData = createBalancedSpace();
+
+// ---------------------------------------------------------------------------
+// 5. ЛОГОТИП SECUDEX ИЗ ПРИКРЕПЛЕННОГО ИЗОБРАЖЕНИЯ (С УДАЛЕНИЕМ ЧЕРНОГО ФОНА)
+// ---------------------------------------------------------------------------
+function createLogoTextureAndFallback(onReady) {
+  const placeholderCanvas = document.createElement('canvas');
+  placeholderCanvas.width = 16;
+  placeholderCanvas.height = 8;
+  const tex = new THREE.CanvasTexture(placeholderCanvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth || 1024;
+    canvas.height = img.naturalHeight || 512;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imgData.data;
+    // Удаляем сплошной черный фон с мягким сглаживанием краев
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const maxC = Math.max(r, g, b);
+      if (maxC < 20) {
+        data[i + 3] = 0;
+      } else if (maxC < 56) {
+        data[i + 3] = Math.round(((maxC - 20) / 36) * 255);
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    const loadedTex = new THREE.CanvasTexture(canvas);
+    loadedTex.colorSpace = THREE.SRGBColorSpace;
+    loadedTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    loadedTex.needsUpdate = true;
+
+    // Отрисовываем тот же прозрачный логотип на финальный оверлей
+    const finalCanvas = document.getElementById('final-logo-canvas');
+    if (finalCanvas) {
+      finalCanvas.width = canvas.width;
+      finalCanvas.height = canvas.height;
+      const fCtx = finalCanvas.getContext('2d');
+      fCtx.clearRect(0, 0, finalCanvas.width, finalCanvas.height);
+      fCtx.drawImage(canvas, 0, 0);
+    }
+    if (onReady) onReady(canvas.width / canvas.height, loadedTex);
+  };
+  img.src = LOGO_ASSET_URL;
+  return tex;
+}
+
+const logoMeshGroup = new THREE.Group();
+logoMeshGroup.position.set(0, 3.48, 0.35);
+scene.add(logoMeshGroup);
+
+let logoMesh;
+const initialLogoTex = createLogoTextureAndFallback((aspect, loadedTex) => {
+  if (logoMesh && aspect > 0) {
+    const h = 1.65;
+    logoMesh.geometry.dispose();
+    logoMesh.geometry = new THREE.PlaneGeometry(h * aspect, h);
+    const oldMap = logoMesh.material.map;
+    logoMesh.material.map = loadedTex;
+    logoMesh.material.needsUpdate = true;
+    if (oldMap && oldMap !== loadedTex) oldMap.dispose();
+  }
+});
+logoMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(3.1, 1.65),
+  new THREE.MeshBasicMaterial({ map: initialLogoTex, transparent: true, depthWrite: false })
+);
+logoMeshGroup.add(logoMesh);
+
+// ---------------------------------------------------------------------------
+// 6. КИБЕРНЕТИЧЕСКИЙ КУБ С ЗАКРЫТОЙ ЗАДНЕЙ СТЕНОЙ ПОДАЧИ СТРАНИЦ И ЭЛЕКТРОДАМИ
+// ---------------------------------------------------------------------------
+const cubeSize = 4.3;
+const half = cubeSize / 2;
+const cubeGroup = new THREE.Group();
+cubeGroup.position.set(0, 0.1, 0);
+scene.add(cubeGroup);
+
+const darkPurpleBeamMat = new THREE.MeshPhysicalMaterial({
+  color: 0x260c47, roughness: 0.28, metalness: 0.9,
+  normalMap: metalNormalTex, normalScale: new THREE.Vector2(0.55, 0.55),
+  roughnessMap: metalTex, clearcoat: 0.35, clearcoatRoughness: 0.24, envMapIntensity: 1.45,
+});
+const cyberArmorMat = new THREE.MeshPhysicalMaterial({
+  color: 0x150929, roughness: 0.34, metalness: 0.88,
+  normalMap: metalNormalTex, normalScale: new THREE.Vector2(0.65, 0.65),
+  roughnessMap: metalTex, clearcoat: 0.28, clearcoatRoughness: 0.3, envMapIntensity: 1.4,
+});
+const cyberChromeMat = new THREE.MeshPhysicalMaterial({
+  color: 0xcbd5e1, roughness: 0.16, metalness: 0.95,
+  normalMap: metalNormalTex, normalScale: new THREE.Vector2(0.35, 0.35),
+  roughnessMap: metalTex, clearcoat: 0.65, clearcoatRoughness: 0.14, envMapIntensity: 1.65,
+});
+const violetAccentMat = new THREE.MeshStandardMaterial({
+  color: 0x6d28d9, emissive: 0x4c1d95, emissiveIntensity: 0.85, roughness: 0.2, metalness: 0.9,
+});
+const electrodeGlowMat = new THREE.MeshStandardMaterial({
+  color: 0x67e8f9, emissive: 0x06b6d4, emissiveIntensity: 1.65, roughness: 0.15, metalness: 0.25,
+});
+
+const cyberCoils = [];
+const faceElectrodeAnchors = [];
+
+// 12 кибернетических ребер с броне-кожухами и электродами
+const beamDirs = [
+  { p: [-half, 0, -half], r: [0, 0, 0] }, { p: [half, 0, -half], r: [0, 0, 0] },
+  { p: [-half, 0, half], r: [0, 0, 0] },  { p: [half, 0, half], r: [0, 0, 0] },
+  { p: [0, -half, -half], r: [0, 0, Math.PI / 2] }, { p: [0, half, -half], r: [0, 0, Math.PI / 2] },
+  { p: [0, -half, half], r: [0, 0, Math.PI / 2] },  { p: [0, half, half], r: [0, 0, Math.PI / 2] },
+  { p: [-half, -half, 0], r: [Math.PI / 2, 0, 0] }, { p: [half, -half, 0], r: [Math.PI / 2, 0, 0] },
+  { p: [-half, half, 0], r: [Math.PI / 2, 0, 0] },  { p: [half, half, 0], r: [Math.PI / 2, 0, 0] },
+];
+
+const barGeo = new THREE.BoxGeometry(0.16, cubeSize, 0.16);
+const stripGeo1 = new THREE.BoxGeometry(0.05, cubeSize - 0.1, 0.175);
+const stripGeo2 = new THREE.BoxGeometry(0.175, cubeSize - 0.1, 0.05);
+const railGeo = new THREE.CylinderGeometry(0.013, 0.013, cubeSize - 0.42, 8);
+const bushingGeo = new THREE.CylinderGeometry(0.055, 0.075, 0.09, 8);
+const tipConeGeo = new THREE.ConeGeometry(0.026, 0.14, 8);
+
+beamDirs.forEach(d => {
+  const beamGroup = new THREE.Group();
+  beamGroup.add(
+    new THREE.Mesh(barGeo, darkPurpleBeamMat),
+    new THREE.Mesh(stripGeo1, violetAccentMat),
+    new THREE.Mesh(stripGeo2, violetAccentMat)
+  );
+  [-1.32, -0.58, 0, 0.58, 1.32].forEach((offset, idx) => {
+    const collar = new THREE.Mesh(
+      new THREE.BoxGeometry(idx === 2 ? 0.24 : 0.21, idx === 2 ? 0.22 : 0.12, idx === 2 ? 0.24 : 0.21),
+      idx === 2 ? cyberChromeMat : cyberArmorMat
+    );
+    collar.position.y = offset;
+    beamGroup.add(collar);
+    if (idx === 2) {
+      beamGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.255, 0.06, 0.255), electrodeGlowMat));
+    }
+  });
+  [[-0.1, -0.1], [0.1, 0.1]].forEach(([ox, oz]) => {
+    const rail = new THREE.Mesh(railGeo, cyberChromeMat);
+    rail.position.set(ox, 0, oz);
+    beamGroup.add(rail);
+  });
+  beamGroup.position.set(...d.p);
+  beamGroup.rotation.set(...d.r);
+  cubeGroup.add(beamGroup);
+
+  [-1.05, 0, 1.05].forEach((along) => {
+    const worldPt = new THREE.Vector3(0, along, 0).applyEuler(beamGroup.rotation).add(beamGroup.position);
+    const inward = worldPt.clone().negate().normalize();
+    const edgeNode = new THREE.Group();
+    edgeNode.position.copy(worldPt);
+    edgeNode.quaternion.setFromUnitVectors(_up, inward);
+    const bushing = new THREE.Mesh(bushingGeo, cyberArmorMat);
+    bushing.position.y = 0.09;
+    const tip = new THREE.Mesh(tipConeGeo, electrodeGlowMat);
+    tip.position.y = 0.19;
+    edgeNode.add(bushing, tip);
+    cubeGroup.add(edgeNode);
+  });
+});
+
+// 8 угловых кибер-замков с внутренними диагональными электродами
+for (const x of [-half, half]) {
+  for (const y of [-half, half]) {
+    for (const z of [-half, half]) {
+      const node = new THREE.Group();
+      node.add(
+        new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.31, 0.31), cyberArmorMat),
+        new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.14, 0.34), cyberChromeMat),
+        new THREE.Mesh(new THREE.OctahedronGeometry(0.22, 0), violetAccentMat)
+      );
+      const inward = new THREE.Vector3(-x, -y, -z).normalize();
+      const cornerPin = new THREE.Group();
+      cornerPin.quaternion.setFromUnitVectors(_up, inward);
+      const pinBase = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.12, 8), cyberChromeMat);
+      pinBase.position.y = 0.2;
+      const pinGlow = new THREE.Mesh(new THREE.SphereGeometry(0.042, 10, 10), electrodeGlowMat);
+      pinGlow.position.y = 0.28;
+      cornerPin.add(pinBase, pinGlow);
+      node.add(cornerPin);
+      node.position.set(x, y, z);
+      cubeGroup.add(node);
+    }
+  }
+}
+
+// Стеклянные грани (передняя, боковые, верх, низ), а ЗАДНЯЯ СТЕНА — ЗАКРЫТАЯ БРОНЕПАНЕЛЬ С ПОРТАЛОМ ПОДАЧИ СТРАНИЦ
+const glassMat = new THREE.MeshPhysicalMaterial({
+  color: 0xd8b4fe, transparent: true, opacity: 0.09,
+  roughness: 0.08, metalness: 0.05, clearcoat: 1.0, clearcoatRoughness: 0.06,
+  depthWrite: false, side: THREE.DoubleSide,
+});
+const glassPlaneGeo = new THREE.PlaneGeometry(cubeSize - 0.1, cubeSize - 0.1);
+[
+  { pos: [0, 0, half - 0.03], rot: [0, 0, 0] },
+  { pos: [-half + 0.03, 0, 0], rot: [0, -Math.PI / 2, 0] },
+  { pos: [half - 0.03, 0, 0], rot: [0, Math.PI / 2, 0] },
+  { pos: [0, half - 0.03, 0], rot: [-Math.PI / 2, 0, 0] },
+  { pos: [0, -half + 0.03, 0], rot: [Math.PI / 2, 0, 0] },
+].forEach(cfg => {
+  const pane = new THREE.Mesh(glassPlaneGeo, glassMat);
+  pane.position.set(...cfg.pos);
+  pane.rotation.set(...cfg.rot);
+  cubeGroup.add(pane);
+});
+
+const glassEdges = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(cubeSize - 0.08, cubeSize - 0.08, cubeSize - 0.08)),
+  new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.5 })
+);
+cubeGroup.add(glassEdges);
+
+// Закрытая кибернетическая задняя стенка куба (портал подачи страниц договора)
+const backWallGroup = new THREE.Group();
+backWallGroup.position.set(0, 0, -half + 0.04);
+const backBulkhead = new THREE.Mesh(new THREE.BoxGeometry(cubeSize - 0.12, cubeSize - 0.12, 0.1), cyberArmorMat);
+backWallGroup.add(backBulkhead);
+
+// Ребра жесткости и светящийся шлюз выхода страниц
+[-1.4, -0.7, 0.7, 1.4].forEach(bx => {
+  const rib = new THREE.Mesh(new THREE.BoxGeometry(0.14, cubeSize - 0.25, 0.14), cyberChromeMat);
+  rib.position.x = bx;
+  backWallGroup.add(rib);
+});
+const portalFrame = new THREE.Mesh(new THREE.BoxGeometry(2.55, 3.38, 0.13), darkPurpleBeamMat);
+backWallGroup.add(portalFrame);
+const portalGlowMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.45 });
+const portalSlot = new THREE.Mesh(new THREE.PlaneGeometry(2.34, 3.16), portalGlowMat);
+portalSlot.position.z = 0.072;
+backWallGroup.add(portalSlot);
+cubeGroup.add(backWallGroup);
+
+// Электроды и дорожки на передней, боковых, верхней и нижней гранях (задняя — глухая)
+function buildFaceElectrodeAssembly(hasCenterEmitter) {
+  const fGroup = new THREE.Group();
+  const cOff = 1.56;
+  [[-cOff, cOff], [cOff, cOff], [-cOff, -cOff], [cOff, -cOff]].forEach(([ex, ey]) => {
+    const mod = new THREE.Group();
+    mod.position.set(ex, ey, 0);
+    const flange = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.17, 0.07, 6), cyberChromeMat);
+    flange.rotation.x = Math.PI / 2;
+    const insulator = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.11, 0.09, 12), cyberArmorMat);
+    insulator.rotation.x = Math.PI / 2;
+    insulator.position.z = -0.05;
+    const outerCap = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.05, 6), electrodeGlowMat);
+    outerCap.rotation.x = Math.PI / 2;
+    outerCap.position.z = 0.05;
+    [-0.04, 0.04].forEach(px => {
+      const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.022, 0.2, 8), cyberChromeMat);
+      rod.rotation.x = Math.PI / 2;
+      rod.position.set(px, 0, -0.15);
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.026, 8, 8), electrodeGlowMat);
+      tip.position.set(px, 0, -0.26);
+      mod.add(rod, tip);
+    });
+    mod.add(flange, insulator, outerCap);
+    fGroup.add(mod);
+  });
+
+  const tracePts = [
+    new THREE.Vector3(-1.82, 1.82, 0), new THREE.Vector3(-1.56, 1.56, 0),
+    new THREE.Vector3(1.82, 1.82, 0), new THREE.Vector3(1.56, 1.56, 0),
+    new THREE.Vector3(-1.82, -1.82, 0), new THREE.Vector3(-1.56, -1.56, 0),
+    new THREE.Vector3(1.82, -1.82, 0), new THREE.Vector3(1.56, -1.56, 0),
+    new THREE.Vector3(-1.56, 1.56, 0), new THREE.Vector3(1.56, 1.56, 0),
+    new THREE.Vector3(-1.56, -1.56, 0), new THREE.Vector3(1.56, -1.56, 0),
+    new THREE.Vector3(-1.56, 1.56, 0), new THREE.Vector3(-1.56, -1.56, 0),
+    new THREE.Vector3(1.56, 1.56, 0), new THREE.Vector3(1.56, -1.56, 0),
+  ];
+  fGroup.add(new THREE.LineSegments(
+    new THREE.BufferGeometry().setFromPoints(tracePts),
+    new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.34 })
+  ));
+
+  [-0.72, 0.72].forEach(bx => {
+    [-1.78, 1.78].forEach(by => {
+      const capBlock = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.09, 0.08), cyberArmorMat);
+      capBlock.position.set(bx, by, 0);
+      const busGlow = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.025, 0.095), electrodeGlowMat);
+      busGlow.position.set(bx, by, 0);
+      const pin = new THREE.Mesh(new THREE.ConeGeometry(0.024, 0.14, 8), electrodeGlowMat);
+      pin.rotation.x = -Math.PI / 2;
+      pin.position.set(bx, by, -0.09);
+      fGroup.add(capBlock, busGlow, pin);
+    });
+  });
+
+  if (hasCenterEmitter) {
+    const emitter = new THREE.Group();
+    const outerRing = new THREE.Mesh(new THREE.TorusGeometry(0.48, 0.042, 10, 24), cyberChromeMat);
+    const coilRing = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.02, 8, 24), electrodeGlowMat);
+    const hexBase = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.1, 6), cyberArmorMat);
+    hexBase.rotation.x = Math.PI / 2;
+    const centerNeedle = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.28, 8), electrodeGlowMat);
+    centerNeedle.rotation.x = -Math.PI / 2;
+    centerNeedle.position.z = -0.18;
+    for (let k = 0; k < 4; k++) {
+      const a = (k * Math.PI) / 2 + Math.PI / 4;
+      const clamp = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.22, 0.1), cyberArmorMat);
+      clamp.position.set(Math.cos(a) * 0.48, Math.sin(a) * 0.48, 0);
+      clamp.rotation.z = a + Math.PI / 2;
+      emitter.add(clamp);
+    }
+    emitter.add(outerRing, coilRing, hexBase, centerNeedle);
+    fGroup.add(emitter);
+    cyberCoils.push(emitter);
+  }
+  return fGroup;
+}
+
+[
+  { pos: [0, 0, half - 0.02], rot: [0, 0, 0], center: false },
+  { pos: [-half + 0.02, 0, 0], rot: [0, -Math.PI / 2, 0], center: true },
+  { pos: [half - 0.02, 0, 0], rot: [0, Math.PI / 2, 0], center: true },
+  { pos: [0, half - 0.02, 0], rot: [-Math.PI / 2, 0, 0], center: true },
+  { pos: [0, -half + 0.02, 0], rot: [Math.PI / 2, 0, 0], center: true },
+].forEach(cfg => {
+  const face = buildFaceElectrodeAssembly(cfg.center);
+  face.position.set(...cfg.pos);
+  face.rotation.set(...cfg.rot);
+  cubeGroup.add(face);
+  if (cfg.center) faceElectrodeAnchors.push(new THREE.Vector3(cfg.pos[0], cfg.pos[1] + 0.1, cfg.pos[2]));
+});
+
+// ---------------------------------------------------------------------------
+// 7. ТЕХНОСФЕРЫ ИИ (3 АГЕНТА СПЕРЕДИ + 1 КОЛОССАЛЬНАЯ ФЛАГМАНСКАЯ СФЕРА ВВЕРХУ)
+// Реалистичные PBR-текстуры, закрытые техно-цифровые пластины, силовой каркас и внутреннее ядро
+// ---------------------------------------------------------------------------
+function createTechArmorMaps(accentHex) {
+  const size = 512;
+  const colC = document.createElement('canvas');
+  colC.width = colC.height = size;
+  const colCtx = colC.getContext('2d');
+
+  const bumpC = document.createElement('canvas');
+  bumpC.width = bumpC.height = size;
+  const bumpCtx = bumpC.getContext('2d');
+
+  const roughC = document.createElement('canvas');
+  roughC.width = roughC.height = size;
+  const roughCtx = roughC.getContext('2d');
+
+  const emC = document.createElement('canvas');
+  emC.width = emC.height = size;
+  const emCtx = emC.getContext('2d');
+
+  // Базовая темная углеродно-титановая броня
+  colCtx.fillStyle = '#0e1524';
+  colCtx.fillRect(0, 0, size, size);
+  bumpCtx.fillStyle = '#787878';
+  bumpCtx.fillRect(0, 0, size, size);
+  roughCtx.fillStyle = '#7a7a7a';
+  roughCtx.fillRect(0, 0, size, size);
+  emCtx.fillStyle = '#000000';
+  emCtx.fillRect(0, 0, size, size);
+
+  // Металлическая шлифовка и микро-зерно поверхности
+  for (let i = 0; i < 1800; i++) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const w = 14 + Math.random() * 54;
+    const v = 16 + Math.floor(Math.random() * 20);
+    colCtx.fillStyle = `rgba(${v + 4}, ${v + 12}, ${v + 28}, 0.35)`;
+    colCtx.fillRect(x, y, w, 1);
+    const rv = 70 + Math.floor(Math.random() * 65);
+    roughCtx.fillStyle = `rgb(${rv},${rv},${rv})`;
+    roughCtx.fillRect(x, y, w, 1);
+  }
+
+  // Сегментированные закрытые бронепластины со скосами, заклепками и цифровыми шинами
+  const cols = 4;
+  const rows = 4;
+  const cellW = size / cols;
+  const cellH = size / rows;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const px = c * cellW;
+      const py = r * cellH;
+      const pad = 5;
+      const shade = ((r + c) % 3 === 0) ? '#172236' : (((r * 3 + c) % 2 === 0) ? '#111a2b' : '#1b273d');
+
+      // Внутренняя приподнятая пластина (Albedo + Crevice AO + Height + Roughness)
+      colCtx.strokeStyle = 'rgba(2, 4, 10, 0.88)';
+      colCtx.lineWidth = 6;
+      colCtx.strokeRect(px, py, cellW, cellH);
+
+      colCtx.fillStyle = shade;
+      colCtx.fillRect(px + pad, py + pad, cellW - pad * 2, cellH - pad * 2);
+
+      // Фаска / блик по верхней-левой кромке, микро-тень по нижней-правой
+      colCtx.strokeStyle = 'rgba(148, 163, 184, 0.28)';
+      colCtx.lineWidth = 1.5;
+      colCtx.strokeRect(px + pad + 1, py + pad + 1, cellW - pad * 2 - 2, cellH - pad * 2 - 2);
+
+      // Глубокий стык между пластинами на карте высот (для точного tangent-space normalMap)
+      bumpCtx.strokeStyle = '#141414';
+      bumpCtx.lineWidth = 6;
+      bumpCtx.strokeRect(px, py, cellW, cellH);
+      bumpCtx.fillStyle = ((r + c) % 2 === 0) ? '#c0c0c0' : '#a2a2a2';
+      bumpCtx.fillRect(px + pad + 2, py + pad + 2, cellW - pad * 2 - 4, cellH - pad * 2 - 4);
+
+      roughCtx.fillStyle = ((r + c) % 2 === 0) ? '#444444' : '#8a8a8a';
+      roughCtx.fillRect(px + pad + 2, py + pad + 2, cellW - pad * 2 - 4, cellH - pad * 2 - 4);
+
+      // Угловые крепежные болты / микро-фиксаторы
+      const bOff = 11;
+      [
+        [px + bOff, py + bOff], [px + cellW - bOff, py + bOff],
+        [px + bOff, py + cellH - bOff], [px + cellW - bOff, py + cellH - bOff],
+      ].forEach(([bx, by]) => {
+        colCtx.fillStyle = '#090d16';
+        colCtx.beginPath(); colCtx.arc(bx, by, 3.1, 0, Math.PI * 2); colCtx.fill();
+        colCtx.fillStyle = '#475569';
+        colCtx.beginPath(); colCtx.arc(bx, by, 2.0, 0, Math.PI * 2); colCtx.fill();
+        bumpCtx.fillStyle = '#222222';
+        bumpCtx.beginPath(); bumpCtx.arc(bx, by, 3.0, 0, Math.PI * 2); bumpCtx.fill();
+        bumpCtx.fillStyle = '#d4d4d4';
+        bumpCtx.beginPath(); bumpCtx.arc(bx, by, 1.5, 0, Math.PI * 2); bumpCtx.fill();
+      });
+
+      // Тонкие цифровые дорожки и микро-решетки охлаждения на части пластин
+      if ((r + c) % 2 === 0) {
+        for (let lv = 0; lv < 4; lv++) {
+          const ly = py + 22 + lv * 7;
+          colCtx.fillStyle = '#050811';
+          colCtx.fillRect(px + 18, ly, cellW - 44, 3);
+          bumpCtx.fillStyle = '#1e1e1e';
+          bumpCtx.fillRect(px + 18, ly, cellW - 44, 3);
+        }
+        // Тонкая цифровая шина данных
+        emCtx.strokeStyle = accentHex;
+        emCtx.lineWidth = 1.4;
+        emCtx.beginPath();
+        emCtx.moveTo(px + 18, py + cellH - 28);
+        emCtx.lineTo(px + cellW * 0.55, py + cellH - 28);
+        emCtx.lineTo(px + cellW * 0.68, py + cellH - 18);
+        emCtx.lineTo(px + cellW - 18, py + cellH - 18);
+        emCtx.stroke();
+
+        emCtx.fillStyle = accentHex;
+        emCtx.fillRect(px + cellW - 26, py + 14, 10, 3);
+      } else {
+        // Цифровая матрица микро-датчиков
+        colCtx.fillStyle = 'rgba(100, 116, 139, 0.35)';
+        colCtx.font = 'bold 9px monospace';
+        colCtx.fillText(`SDX-${r}${c}9`, px + 18, py + 28);
+        emCtx.fillStyle = accentHex;
+        emCtx.fillRect(px + 18, py + cellH - 20, 18, 2.5);
+        emCtx.fillRect(px + 40, py + cellH - 20, 6, 2.5);
+      }
+    }
+  }
+
+  const maxAniso = renderer.capabilities.getMaxAnisotropy();
+  const colorTex = new THREE.CanvasTexture(colC);
+  colorTex.colorSpace = THREE.SRGBColorSpace;
+  colorTex.wrapS = colorTex.wrapT = THREE.RepeatWrapping;
+  colorTex.anisotropy = maxAniso;
+
+  const normalTex = heightCanvasToNormalTex(bumpC, 3.1, 1, 1);
+
+  const roughTex = new THREE.CanvasTexture(roughC);
+  roughTex.wrapS = roughTex.wrapT = THREE.RepeatWrapping;
+  roughTex.anisotropy = maxAniso;
+
+  const emissiveTex = new THREE.CanvasTexture(emC);
+  emissiveTex.colorSpace = THREE.SRGBColorSpace;
+  emissiveTex.wrapS = emissiveTex.wrapT = THREE.RepeatWrapping;
+  emissiveTex.anisotropy = maxAniso;
+
+  return { colorTex, normalTex, roughTex, emissiveTex };
+}
+
+function createPointSpriteTex() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(16, 16, 1, 16, 16, 15);
+  g.addColorStop(0, 'rgba(255, 255, 255, 1)');
+  g.addColorStop(0.35, 'rgba(186, 230, 253, 0.85)');
+  g.addColorStop(1, 'rgba(56, 189, 248, 0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 32, 32);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+const dataPointSpriteTex = createPointSpriteTex();
+
+function createBeveledTechPlateGeometry(w, h, depth) {
+  const shape = new THREE.Shape();
+  const hw = w * 0.5;
+  const hh = h * 0.5;
+  const ch = Math.min(w, h) * 0.18;
+  shape.moveTo(-hw + ch, -hh);
+  shape.lineTo(hw - ch, -hh);
+  shape.lineTo(hw, -hh + ch);
+  shape.lineTo(hw, hh - ch);
+  shape.lineTo(hw - ch, hh);
+  shape.lineTo(-hw + ch, hh);
+  shape.lineTo(-hw, hh - ch);
+  shape.lineTo(-hw, -hh + ch);
+  shape.closePath();
+
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled: true,
+    bevelThickness: depth * 0.35,
+    bevelSize: Math.min(w, h) * 0.04,
+    bevelSegments: 2,
+  });
+  geo.center();
+  return geo;
+}
+
+function createCodeLayerCanvas(accentHex) {
+  const c = document.createElement('canvas');
+  c.width = 1024; c.height = 512;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = 'rgba(4, 7, 16, 0.18)';
+  ctx.fillRect(0, 0, 1024, 512);
+  ctx.font = 'bold 11px monospace';
+  const tokens = [
+    '0xA4F9::CLAUSE_VERIFY', 'RISK_EVAL => 0.841', 'AST_LEGAL_NODE[2.1]',
+    'SHA3:99F1_QUANTUM', 'TRAP_GUARD_ACTIVE', 'WEIGHT_SIGMA:0.924',
+    'MEM_BANK[4096x64]', 'AGENT_SYNC_STREAM()', 'SECUDEX_PROTOCOL_V9',
+  ];
+  for (let row = 0; row < 28; row++) {
+    ctx.fillStyle = row % 4 === 0 ? accentHex : 'rgba(148, 163, 184, 0.62)';
+    const line = `${tokens[row % tokens.length]}  // ${Math.random().toString(16).slice(2, 10).toUpperCase()}  [${(row * 17) % 99}]`;
+    ctx.fillText(line, (row * 43) % 240, 14 + row * 18);
+    ctx.fillText(line, ((row * 43) % 240) + 512, 14 + row * 18);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return tex;
+}
+
+function createTechnosphere({ radius, position, accentColor, secondaryColor, label, isFlagship = false }) {
+  const group = new THREE.Group();
+  group.position.copy(position);
+  scene.add(group);
+
+  const accentHexStr = '#' + new THREE.Color(accentColor).getHexString();
+  const armorMaps = createTechArmorMaps(accentHexStr);
+
+  // 1. Внутреннее квантовое ядро (многогранный темный коллайдер + энергетический кристалл + силовой каркас)
+  const coreGroup = new THREE.Group();
+  const coreMat = new THREE.MeshStandardMaterial({
+    color: 0x0f172a,
+    emissive: accentColor,
+    emissiveIntensity: 1.9,
+    roughness: 0.14,
+    metalness: 0.88,
+    flatShading: true,
+  });
+  const coreMesh = new THREE.Mesh(new THREE.OctahedronGeometry(radius * 0.175, 1), coreMat);
+  const coreCage = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(radius * 0.22, 0),
+    new THREE.MeshStandardMaterial({
+      color: 0x94a3b8, metalness: 0.94, roughness: 0.22, wireframe: true,
+    })
+  );
+  const coreAura = new THREE.Mesh(
+    new THREE.SphereGeometry(radius * 0.28, 18, 14),
+    new THREE.MeshBasicMaterial({
+      color: accentColor, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false,
+    })
+  );
+  coreGroup.add(coreMesh, coreCage);
+  group.add(coreGroup, coreAura);
+
+  // 2. Прецизионные гироскопические кольца переработки с захватами и оптическими шинами
+  const procGroup = new THREE.Group();
+  const gimbalBodyMat = new THREE.MeshPhysicalMaterial({
+    color: 0x1e293b,
+    metalness: 0.93,
+    roughness: 0.22,
+    normalMap: armorMaps.normalTex,
+    normalScale: new THREE.Vector2(0.85, 0.85),
+    clearcoat: 0.4,
+    clearcoatRoughness: 0.2,
+    envMapIntensity: 1.5,
+  });
+  const gimbalClampMat = new THREE.MeshStandardMaterial({
+    color: 0x64748b,
+    metalness: 0.95,
+    roughness: 0.18,
+  });
+  const gimbalTrackMat = new THREE.MeshStandardMaterial({
+    color: 0x0f172a,
+    emissive: secondaryColor,
+    emissiveIntensity: 1.25,
+    metalness: 0.6,
+    roughness: 0.2,
+  });
+
+  const rings = [];
+  const clampGeo = new THREE.BoxGeometry(radius * 0.042, radius * 0.056, radius * 0.056);
+  [0.35, 0.46, 0.57].forEach((rf, idx) => {
+    const rGroup = new THREE.Group();
+    const rRad = radius * rf;
+    const baseTorus = new THREE.Mesh(new THREE.TorusGeometry(rRad, radius * 0.015, 10, 48), gimbalBodyMat);
+    const optTrack = new THREE.Mesh(new THREE.TorusGeometry(rRad * 1.006, radius * 0.005, 6, 48), gimbalTrackMat);
+    rGroup.add(baseTorus, optTrack);
+
+    const clampCount = isFlagship ? 10 : 6;
+    for (let c = 0; c < clampCount; c++) {
+      const a = (c / clampCount) * Math.PI * 2;
+      const clamp = new THREE.Mesh(clampGeo, gimbalClampMat);
+      clamp.position.set(Math.cos(a) * rRad, Math.sin(a) * rRad, 0);
+      clamp.rotation.z = a;
+      rGroup.add(clamp);
+    }
+
+    rGroup.rotation.set(idx * 0.92, idx * 0.65, idx * 0.42);
+    procGroup.add(rGroup);
+    rings.push(rGroup);
+  });
+  group.add(procGroup);
+
+  // 3. Структурированный массив данных (точечные LiDAR-узлы вместо крупных квадратных пикселей)
+  const dataCount = isFlagship ? 340 : 140;
+  const dPos = new Float32Array(dataCount * 3);
+  const latBands = isFlagship ? 10 : 6;
+  for (let i = 0; i < dataCount; i++) {
+    const band = i % latBands;
+    const theta = 0.35 + (band / (latBands - 1)) * (Math.PI - 0.7);
+    const phi = (i / dataCount) * Math.PI * 18 + band * 0.7;
+    const dr = radius * (0.61 + (i % 3) * 0.045);
+    dPos[i * 3] = dr * Math.sin(theta) * Math.cos(phi);
+    dPos[i * 3 + 1] = dr * Math.cos(theta);
+    dPos[i * 3 + 2] = dr * Math.sin(theta) * Math.sin(phi);
+  }
+  const dataGeo = new THREE.BufferGeometry();
+  dataGeo.setAttribute('position', new THREE.BufferAttribute(dPos, 3));
+  const dataMat = new THREE.PointsMaterial({
+    color: accentColor,
+    map: dataPointSpriteTex,
+    size: isFlagship ? 0.075 : 0.036,
+    transparent: true,
+    opacity: 0.9,
+    alphaTest: 0.01,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const dataPoints = new THREE.Points(dataGeo, dataMat);
+  group.add(dataPoints);
+
+  // 4. Внутренний слой микро-кода
+  const codeTex = createCodeLayerCanvas(accentHexStr);
+  const codeMat = new THREE.MeshBasicMaterial({
+    map: codeTex,
+    transparent: true,
+    opacity: 0.56,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const codeSphere = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.76, 32, 22), codeMat);
+  group.add(codeSphere);
+
+  // 5. Закрытая техно-цифровая броня корпуса (сферические щиты + объемные скошенные пластины)
+  const armorGroup = new THREE.Group();
+  const hullCowlMat = new THREE.MeshPhysicalMaterial({
+    color: 0xffffff,
+    map: armorMaps.colorTex,
+    normalMap: armorMaps.normalTex,
+    normalScale: new THREE.Vector2(isFlagship ? 1.45 : 1.15, isFlagship ? 1.45 : 1.15),
+    roughnessMap: armorMaps.roughTex,
+    roughness: 0.38,
+    metalness: 0.89,
+    clearcoat: 0.42,
+    clearcoatRoughness: 0.22,
+    iridescence: 0.22,
+    iridescenceIOR: 1.45,
+    specularIntensity: 1.0,
+    envMapIntensity: 1.58,
+    emissive: 0xffffff,
+    emissiveMap: armorMaps.emissiveTex,
+    emissiveIntensity: 0.88,
+    side: THREE.DoubleSide,
+  });
+
+  const plateMat = new THREE.MeshPhysicalMaterial({
+    color: 0xdbeafe,
+    map: armorMaps.colorTex,
+    normalMap: armorMaps.normalTex,
+    normalScale: new THREE.Vector2(isFlagship ? 1.55 : 1.2, isFlagship ? 1.55 : 1.2),
+    roughnessMap: armorMaps.roughTex,
+    roughness: 0.30,
+    metalness: 0.92,
+    clearcoat: 0.56,
+    clearcoatRoughness: 0.16,
+    iridescence: 0.18,
+    iridescenceIOR: 1.4,
+    specularIntensity: 1.0,
+    envMapIntensity: 1.65,
+    emissive: 0xffffff,
+    emissiveMap: armorMaps.emissiveTex,
+    emissiveIntensity: 0.95,
+  });
+
+  const digitalModuleMat = new THREE.MeshStandardMaterial({
+    color: 0x0b1322,
+    map: armorMaps.colorTex,
+    emissive: accentColor,
+    emissiveMap: armorMaps.emissiveTex,
+    emissiveIntensity: 1.25,
+    metalness: 0.82,
+    roughness: 0.22,
+  });
+
+  // Закрытые сферические бронекожухи (на главном ИИ — плотное многосекторное закрытие верха, низа, тыла и боков)
+  const cowlScale = isFlagship ? 0.945 : 0.93;
+  // Северный купол (оставляет узкий полярный порт для импульса)
+  armorGroup.add(new THREE.Mesh(
+    new THREE.SphereGeometry(radius * cowlScale, 36, 14, 0, Math.PI * 2, isFlagship ? 0.15 : 0.18, isFlagship ? 0.74 : 0.56),
+    hullCowlMat
+  ));
+  // Южный бронекожух
+  armorGroup.add(new THREE.Mesh(
+    new THREE.SphereGeometry(radius * cowlScale, 36, 14, 0, Math.PI * 2, isFlagship ? 2.24 : 2.38, isFlagship ? 0.74 : 0.58),
+    hullCowlMat
+  ));
+  // Тыловой и боковой закрытый корпус (оставляет фронтальный обзорный визор к камере +Z)
+  const rearPhiStart = isFlagship ? Math.PI * 0.76 : Math.PI * 0.82;
+  const rearPhiLen = isFlagship ? Math.PI * 1.48 : Math.PI * 1.36;
+  armorGroup.add(new THREE.Mesh(
+    new THREE.SphereGeometry(radius * cowlScale, 36, 18, rearPhiStart, rearPhiLen, 0.72, 1.70),
+    hullCowlMat
+  ));
+
+  // Силовые меридианные и широтные бронекольца вокруг визора
+  const structRingMat = new THREE.MeshPhysicalMaterial({
+    color: 0x1e293b,
+    metalness: 0.95,
+    roughness: 0.19,
+    normalMap: armorMaps.normalTex,
+    normalScale: new THREE.Vector2(0.85, 0.85),
+    clearcoat: 0.5,
+    clearcoatRoughness: 0.16,
+    envMapIntensity: 1.55,
+  });
+  const collarTop = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.79, radius * 0.022, 10, 48), structRingMat);
+  collarTop.rotation.x = Math.PI / 2;
+  collarTop.position.y = radius * 0.58;
+  const collarBot = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.79, radius * 0.022, 10, 48), structRingMat);
+  collarBot.rotation.x = Math.PI / 2;
+  collarBot.position.y = -radius * 0.58;
+  armorGroup.add(collarTop, collarBot);
+
+  if (isFlagship) {
+    // Полярная бронешахта-излучатель на северном полюсе главного ИИ
+    const emitterCrown = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius * 0.16, radius * 0.24, radius * 0.12, 12, 1, true),
+      structRingMat
+    );
+    emitterCrown.position.y = radius * 0.97;
+    armorGroup.add(emitterCrown);
+
+    // Боковые вертикальные ребра обрамления переднего оптического отсека
+    [-0.78, 0.78].forEach(ry => {
+      const arc = new THREE.Mesh(
+        new THREE.TorusGeometry(radius * 0.97, radius * 0.02, 8, 48),
+        structRingMat
+      );
+      arc.rotation.y = ry;
+      armorGroup.add(arc);
+    });
+  }
+
+  // Наложение объемных скошенных закрытых техно-цифровых пластин (InstancedMesh)
+  const plateCandidates = [];
+  const latSteps = isFlagship ? 8 : 5;
+  for (let li = 0; li < latSteps; li++) {
+    const tNorm = (li + 0.5) / latSteps;
+    const theta = 0.22 + tNorm * (Math.PI - 0.44);
+    const sinT = Math.sin(theta);
+    const cosT = Math.cos(theta);
+    const lonCount = Math.max(6, Math.round((isFlagship ? 14 : 8) * sinT));
+
+    for (let lj = 0; lj < lonCount; lj++) {
+      const phi = (lj / lonCount) * Math.PI * 2 + (li % 2) * (Math.PI / lonCount);
+      const nx = sinT * Math.cos(phi);
+      const ny = cosT;
+      const nz = sinT * Math.sin(phi);
+
+      // На главном ИИ плотно закрываем весь корпус, кроме фронтального оптического окна (nz > 0.56 и |ny| < 0.40)
+      const inFrontAperture = isFlagship
+        ? (nz > 0.56 && Math.abs(ny) < 0.40)
+        : (nz > 0.44 && Math.abs(ny) < 0.52);
+
+      if (!inFrontAperture) {
+        plateCandidates.push({ nx, ny, nz, tier: (li + lj) % 2 });
+      }
+    }
+  }
+
+  const plateW = isFlagship ? radius * 0.34 : radius * 0.42;
+  const plateH = isFlagship ? radius * 0.24 : radius * 0.29;
+  const plateGeo = createBeveledTechPlateGeometry(plateW, plateH, radius * 0.032);
+  const plateInst = new THREE.InstancedMesh(plateGeo, plateMat, plateCandidates.length);
+  const modGeo = createBeveledTechPlateGeometry(plateW * 0.58, plateH * 0.38, radius * 0.018);
+  const modCount = Math.ceil(plateCandidates.length * 0.65);
+  const modInst = new THREE.InstancedMesh(modGeo, digitalModuleMat, modCount);
+
+  const dummy = new THREE.Object3D();
+  const cVar = new THREE.Color();
+  const paletteTints = [0x94a3b8, 0xb8c7dc, 0x64748b, 0x7c93b3];
+
+  let mIdx = 0;
+  plateCandidates.forEach((pt, idx) => {
+    const rPlace = radius * (pt.tier === 0 ? 0.975 : 1.005);
+    dummy.position.set(pt.nx * rPlace, pt.ny * rPlace, pt.nz * rPlace);
+    dummy.lookAt(pt.nx * rPlace * 2, pt.ny * rPlace * 2, pt.nz * rPlace * 2);
+    const sc = pt.tier === 0 ? 1.0 : 0.92;
+    dummy.scale.set(sc, sc, 1);
+    dummy.updateMatrix();
+    plateInst.setMatrixAt(idx, dummy.matrix);
+    cVar.setHex(paletteTints[idx % paletteTints.length]);
+    plateInst.setColorAt(idx, cVar);
+
+    if (mIdx < modCount && (idx % 3 !== 1)) {
+      const rMod = rPlace + radius * 0.022;
+      dummy.position.set(pt.nx * rMod, pt.ny * rMod, pt.nz * rMod);
+      dummy.lookAt(pt.nx * rMod * 2, pt.ny * rMod * 2, pt.nz * rMod * 2);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      modInst.setMatrixAt(mIdx, dummy.matrix);
+      mIdx++;
+    }
+  });
+  modInst.count = mIdx;
+  plateInst.instanceMatrix.needsUpdate = true;
+  if (plateInst.instanceColor) plateInst.instanceColor.needsUpdate = true;
+  modInst.instanceMatrix.needsUpdate = true;
+  plateInst.computeBoundingSphere();
+  modInst.computeBoundingSphere();
+  armorGroup.add(plateInst, modInst);
+  group.add(armorGroup);
+
+  // 6. Изменчивая оптическая проекция в окне визора и тонкая внешняя оболочка
+  const projCanvas = document.createElement('canvas');
+  projCanvas.width = isFlagship ? 1024 : 512;
+  projCanvas.height = isFlagship ? 512 : 256;
+  const projCtx = projCanvas.getContext('2d');
+  const projTex = new THREE.CanvasTexture(projCanvas);
+  projTex.colorSpace = THREE.SRGBColorSpace;
+  projTex.wrapS = THREE.RepeatWrapping;
+  projTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+  const outerMat = new THREE.MeshPhysicalMaterial({
+    color: 0xffffff,
+    map: projTex,
+    emissive: secondaryColor,
+    emissiveMap: projTex,
+    emissiveIntensity: 0.9,
+    transparent: true,
+    opacity: 0.56,
+    roughness: 0.08,
+    metalness: 0.25,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.06,
+    ior: 1.76,
+    envMapIntensity: 1.75,
+    depthWrite: false,
+    side: THREE.FrontSide,
+  });
+
+  outerMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = { value: 0 };
+    shader.uniforms.uMorph = { value: 1.0 };
+    shader.uniforms.uFresnelColor = { value: new THREE.Color(secondaryColor) };
+    outerMat.userData.shader = shader;
+    shader.vertexShader = 'uniform float uTime;\nuniform float uMorph;\n' + shader.vertexShader;
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `
+      #include <begin_vertex>
+      float wave = sin(position.x * 5.2 + uTime * 2.4) * cos(position.y * 4.8 - uTime * 1.9) * sin(position.z * 4.5 + uTime * 1.5);
+      transformed += normal * (wave * ${(radius * 0.012).toFixed(4)} * uMorph);
+      `
+    );
+    shader.fragmentShader = 'uniform vec3 uFresnelColor;\n' + shader.fragmentShader;
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <emissivemap_fragment>',
+      `
+      #include <emissivemap_fragment>
+      float optFresnel = pow(1.0 - clamp(abs(dot(normalize(normal), normalize(vViewPosition))), 0.0, 1.0), 2.8);
+      totalEmissiveRadiance += uFresnelColor * (optFresnel * 0.72);
+      `
+    );
+  };
+
+  const outerShell = new THREE.Mesh(
+    new THREE.SphereGeometry(radius * 0.96, isFlagship ? 40 : 24, isFlagship ? 28 : 18),
+    outerMat
+  );
+  outerShell.rotation.y = -Math.PI / 2;
+  group.add(outerShell);
+
+  // Тонкий темный титановый силовой каркас поверх сферы
+  const wireMat = new THREE.MeshBasicMaterial({
+    color: 0x334155,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.16,
+  });
+  const wireShell = new THREE.Mesh(new THREE.IcosahedronGeometry(radius * 1.025, isFlagship ? 3 : 2), wireMat);
+  group.add(wireShell);
+
+  // 7. Светящееся кольцо данных вокруг сферы
+  const dataRingGroup = new THREE.Group();
+  dataRingGroup.rotation.set(0.28, 0, -0.14);
+
+  const ringBandCanvas = document.createElement('canvas');
+  ringBandCanvas.width = 1024;
+  ringBandCanvas.height = 128;
+  const rbCtx = ringBandCanvas.getContext('2d');
+  rbCtx.clearRect(0, 0, 1024, 128);
+  for (let x = 0; x < 1024; x += 16) {
+    const tall = x % 64 === 0 ? 52 : (x % 32 === 0 ? 34 : 18);
+    rbCtx.fillStyle = x % 64 === 0 ? '#ffffff' : accentHexStr;
+    rbCtx.fillRect(x, 64 - tall * 0.5, 6, tall);
+  }
+  rbCtx.strokeStyle = accentHexStr;
+  rbCtx.lineWidth = 3;
+  rbCtx.beginPath();
+  rbCtx.moveTo(0, 20); rbCtx.lineTo(1024, 20);
+  rbCtx.moveTo(0, 108); rbCtx.lineTo(1024, 108);
+  rbCtx.stroke();
+  rbCtx.fillStyle = '#e0f2fe';
+  rbCtx.font = 'bold 14px monospace';
+  for (let s = 0; s < 4; s++) {
+    rbCtx.fillText(`DATA_BUS::0${s + 1} // SYNC_OK`, 28 + s * 256, 15);
+  }
+
+  const dataRingTex = new THREE.CanvasTexture(ringBandCanvas);
+  dataRingTex.colorSpace = THREE.SRGBColorSpace;
+  dataRingTex.wrapS = THREE.RepeatWrapping;
+  dataRingTex.repeat.set(isFlagship ? 3 : 2, 1);
+  dataRingTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+  const dataRingR = radius * (isFlagship ? 1.24 : 1.28);
+  const dataRingBandMat = new THREE.MeshBasicMaterial({
+    map: dataRingTex,
+    color: accentColor,
+    transparent: true,
+    opacity: isFlagship ? 0.85 : 0.72,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const dataRingBand = new THREE.Mesh(
+    new THREE.CylinderGeometry(dataRingR, dataRingR, radius * (isFlagship ? 0.16 : 0.18), 64, 1, true),
+    dataRingBandMat
+  );
+  const dataRingCoreMat = new THREE.MeshBasicMaterial({
+    color: accentColor,
+    transparent: true,
+    opacity: 0.9,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const dataRingCore = new THREE.Mesh(
+    new THREE.TorusGeometry(dataRingR, radius * 0.011, 8, 72),
+    dataRingCoreMat
+  );
+  dataRingCore.rotation.x = Math.PI / 2;
+  dataRingGroup.add(dataRingBand, dataRingCore);
+  group.add(dataRingGroup);
+
+  // 8. Динамическая голографическая проекция вердикта над сферой (CanvasTexture)
+  const verdictHoloGroup = new THREE.Group();
+  verdictHoloGroup.position.set(0, radius * 1.74, 0.45);
+  verdictHoloGroup.visible = false;
+
+  const verdictCanvas = document.createElement('canvas');
+  verdictCanvas.width = 1024;
+  verdictCanvas.height = 384;
+  const verdictCtx = verdictCanvas.getContext('2d');
+  const verdictTex = new THREE.CanvasTexture(verdictCanvas);
+  verdictTex.colorSpace = THREE.SRGBColorSpace;
+  verdictTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+  const verdictHoloMat = new THREE.MeshBasicMaterial({
+    map: verdictTex,
+    transparent: true,
+    opacity: 0.96,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const verdictHoloPlane = new THREE.Mesh(
+    new THREE.PlaneGeometry(radius * 2.5, radius * 0.92),
+    verdictHoloMat
+  );
+  const verdictConeMat = new THREE.MeshBasicMaterial({
+    color: 0xff3b5c,
+    transparent: true,
+    opacity: 0.1,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const verdictCone = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 0.52, radius * 0.14, radius * 0.56, 24, 1, true),
+    verdictConeMat
+  );
+  verdictCone.position.set(0, -radius * 0.68, -0.35);
+  verdictHoloGroup.add(verdictCone, verdictHoloPlane);
+  group.add(verdictHoloGroup);
+
+  function updateVerdictHologram(visible, percentText = '84%', elapsed = 0, threatCount = 5) {
+    verdictHoloGroup.visible = visible;
+    if (!visible) return;
+
+    const w = verdictCanvas.width;
+    const h = verdictCanvas.height;
+    verdictCtx.clearRect(0, 0, w, h);
+
+    const pulse = 0.72 + Math.sin(elapsed * 8) * 0.28;
+    // Фон голографической панели
+    const bgGrad = verdictCtx.createLinearGradient(0, 0, 0, h);
+    bgGrad.addColorStop(0, 'rgba(30, 8, 20, 0.72)');
+    bgGrad.addColorStop(0.5, 'rgba(48, 8, 24, 0.86)');
+    bgGrad.addColorStop(1, 'rgba(20, 6, 16, 0.72)');
+    verdictCtx.fillStyle = bgGrad;
+    verdictCtx.fillRect(36, 26, w - 72, h - 52);
+
+    // Горизонтальные голографические скан-линии и бегущая полоса
+    verdictCtx.fillStyle = 'rgba(255, 77, 109, 0.08)';
+    for (let y = 32; y < h - 32; y += 8) {
+      verdictCtx.fillRect(40, y, w - 80, 2);
+    }
+    const sweepY = 30 + ((elapsed * 180) % (h - 60));
+    verdictCtx.fillStyle = `rgba(255, 130, 150, ${(0.28 * pulse).toFixed(2)})`;
+    verdictCtx.fillRect(40, sweepY, w - 80, 10);
+
+    // Угловые силовые скобки голограммы
+    verdictCtx.strokeStyle = `rgba(255, 77, 109, ${pulse.toFixed(2)})`;
+    verdictCtx.lineWidth = 6;
+    const bx0 = 36, bx1 = w - 36, by0 = 26, by1 = h - 26, br = 42;
+    verdictCtx.beginPath();
+    verdictCtx.moveTo(bx0, by0 + br); verdictCtx.lineTo(bx0, by0); verdictCtx.lineTo(bx0 + br, by0);
+    verdictCtx.moveTo(bx1 - br, by0); verdictCtx.lineTo(bx1, by0); verdictCtx.lineTo(bx1, by0 + br);
+    verdictCtx.moveTo(bx0, by1 - br); verdictCtx.lineTo(bx0, by1); verdictCtx.lineTo(bx0 + br, by1);
+    verdictCtx.moveTo(bx1 - br, by1); verdictCtx.lineTo(bx1, by1); verdictCtx.lineTo(bx1, by1 - br);
+    verdictCtx.stroke();
+
+    // Верхняя строка статуса
+    verdictCtx.textAlign = 'center';
+    verdictCtx.textBaseline = 'middle';
+    verdictCtx.fillStyle = '#fda4af';
+    verdictCtx.font = 'bold 26px monospace';
+    verdictCtx.fillText(`ГОЛОГРАФИЧЕСКИЙ ВЕРДИКТ SECUDEX • УГРОЗ: ${threatCount}/5`, w / 2, 76);
+
+    // Крупный процент и вердикт
+    verdictCtx.fillStyle = '#ff4d6d';
+    verdictCtx.font = '900 124px Arial, sans-serif';
+    verdictCtx.fillText(percentText, w / 2, 198);
+
+    verdictCtx.fillStyle = '#ffffff';
+    verdictCtx.font = '900 32px Arial, sans-serif';
+    verdictCtx.fillText('КРИТИЧЕСКИЙ УРОВЕНЬ ЮРИДИЧЕСКОГО РИСКА', w / 2, 310);
+
+    verdictTex.needsUpdate = true;
+    verdictHoloGroup.position.y = radius * (1.74 + Math.sin(elapsed * 3.2) * 0.02);
+  }
+
+  function updateProjection(mode, statusText, percentText) {
+    const w = projCanvas.width, h = projCanvas.height;
+    projCtx.clearRect(0, 0, w, h);
+
+    // Прецизионная калибровочная сетка визора
+    projCtx.strokeStyle = mode === 'powerdown'
+      ? 'rgba(30, 41, 59, 0.25)'
+      : (mode === 'verdict' ? 'rgba(255, 59, 92, 0.45)' : 'rgba(56, 189, 248, 0.24)');
+    projCtx.lineWidth = 1;
+    for (let x = w * 0.25; x <= w * 0.75; x += w / 24) {
+      projCtx.beginPath(); projCtx.moveTo(x, h * 0.22); projCtx.lineTo(x, h * 0.78); projCtx.stroke();
+    }
+    for (let y = h * 0.25; y <= h * 0.75; y += h / 12) {
+      projCtx.beginPath(); projCtx.moveTo(w * 0.25, y); projCtx.lineTo(w * 0.75, y); projCtx.stroke();
+    }
+
+    if (mode === 'powerdown') {
+      dataRingBandMat.opacity = 0.08;
+      dataRingCoreMat.opacity = 0.1;
+      projTex.needsUpdate = true;
+      return;
+    }
+
+    if (mode === 'verdict' && isFlagship) {
+      dataRingBandMat.color.setHex(0xff3b5c);
+      dataRingCoreMat.color.setHex(0xff6b81);
+      dataRingBandMat.opacity = 0.95;
+      dataRingCoreMat.opacity = 0.95;
+
+      // Резкая, монументальная проекция вердикта в процентах по центру переднего визора флагмана
+      projCtx.fillStyle = 'rgba(28, 4, 14, 0.84)';
+      projCtx.fillRect(w * 0.31, h * 0.28, w * 0.38, h * 0.44);
+      projCtx.strokeStyle = '#ff3b5c';
+      projCtx.lineWidth = 4;
+      projCtx.strokeRect(w * 0.31, h * 0.28, w * 0.38, h * 0.44);
+
+      projCtx.textAlign = 'center';
+      projCtx.textBaseline = 'middle';
+      projCtx.fillStyle = '#fecdd3';
+      projCtx.font = '900 22px monospace';
+      projCtx.fillText('ВЕРДИКТ ИИ • РИСК', w / 2, h * 0.38);
+
+      projCtx.fillStyle = '#ff4d6d';
+      projCtx.font = '900 104px Arial, sans-serif';
+      projCtx.fillText(percentText || '84%', w / 2, h * 0.56);
+    } else {
+      dataRingBandMat.color.setHex(accentColor);
+      dataRingCoreMat.color.setHex(accentColor);
+      dataRingBandMat.opacity = isFlagship ? 0.85 : 0.72;
+      dataRingCoreMat.opacity = 0.9;
+
+      // Тонкая тактическая проекция телеметрии внутри оптического визора
+      const tNow = performance.now() * 0.0022;
+      projCtx.strokeStyle = mode === 'scan' ? '#fb7185' : '#38bdf8';
+      projCtx.lineWidth = isFlagship ? 2.2 : 1.5;
+      projCtx.beginPath();
+      for (let x = w * 0.3; x <= w * 0.7; x += 6) {
+        const env = Math.sin(((x - w * 0.3) / (w * 0.4)) * Math.PI);
+        const y = h * 0.5 + (Math.sin(x * 0.05 + tNow * 2) * (h * 0.11) + Math.cos(x * 0.12 - tNow * 3) * (h * 0.04)) * env;
+        if (x === w * 0.3) projCtx.moveTo(x, y); else projCtx.lineTo(x, y);
+      }
+      projCtx.stroke();
+
+      // Угловые прицельные скобки визора
+      projCtx.strokeStyle = 'rgba(148, 163, 184, 0.65)';
+      projCtx.lineWidth = 2;
+      const bx0 = w * 0.33, bx1 = w * 0.67, by0 = h * 0.31, by1 = h * 0.69, br = 16;
+      projCtx.beginPath();
+      projCtx.moveTo(bx0, by0 + br); projCtx.lineTo(bx0, by0); projCtx.lineTo(bx0 + br, by0);
+      projCtx.moveTo(bx1 - br, by0); projCtx.lineTo(bx1, by0); projCtx.lineTo(bx1, by0 + br);
+      projCtx.moveTo(bx0, by1 - br); projCtx.lineTo(bx0, by1); projCtx.lineTo(bx0 + br, by1);
+      projCtx.moveTo(bx1 - br, by1); projCtx.lineTo(bx1, by1); projCtx.lineTo(bx1, by1 - br);
+      projCtx.stroke();
+
+      projCtx.fillStyle = '#e2e8f0';
+      projCtx.textAlign = 'center';
+      projCtx.font = `700 ${isFlagship ? 20 : 14}px monospace`;
+      projCtx.fillText(label, w / 2, h * 0.37);
+
+      projCtx.fillStyle = mode === 'scan' ? '#fda4af' : '#7dd3fc';
+      projCtx.font = `700 ${isFlagship ? 17 : 12}px monospace`;
+      projCtx.fillText(statusText || 'ONLINE // MATRIX', w / 2, h * 0.64);
+    }
+    projTex.needsUpdate = true;
+  }
+
+  updateProjection('idle', 'STANDBY // CORE LOCKED');
+
+  return {
+    group,
+    coreMesh,
+    coreCage,
+    coreMat,
+    rings,
+    dataPoints,
+    dataMat,
+    codeSphere,
+    codeTex,
+    outerShell,
+    outerMat,
+    wireShell,
+    wireMat,
+    dataRingGroup,
+    dataRingTex,
+    dataRingBandMat,
+    dataRingCoreMat,
+    verdictHoloGroup,
+    updateVerdictHologram,
+    armorMats: [hullCowlMat, plateMat, digitalModuleMat, gimbalTrackMat],
+    projTex,
+    updateProjection,
+    radius,
+  };
+}
+
+// 3 Сферы-агенты спереди: два по углам и один по центру переднего нижнего ребра
+const agentSpecs = [
+  { pos: new THREE.Vector3(-2.7, -1.78, 2.55), accent: 0x38bdf8, secondary: 0x7c3aed, label: 'АГЕНТ-01 // ПРАВА' },
+  { pos: new THREE.Vector3(0.0, -1.88, 2.95),  accent: 0xe879f9, secondary: 0x6d28d9, label: 'АГЕНТ-02 // РИСКИ' },
+  { pos: new THREE.Vector3(2.7, -1.78, 2.55),  accent: 0x60a5fa, secondary: 0x4f46e5, label: 'АГЕНТ-03 // САНКЦИИ' },
+];
+const agentSpheres = agentSpecs.map(s => createTechnosphere({
+  radius: 0.68,
+  position: s.pos,
+  accentColor: s.accent,
+  secondaryColor: s.secondary,
+  label: s.label,
+}));
+
+// Соединительные кабели от 3 передних сфер к переднему нижнему ребру/углам куба
+const cableMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.3, metalness: 0.4 });
+[
+  [agentSpecs[0].pos, new THREE.Vector3(-half, -half + 0.1, half)],
+  [agentSpecs[1].pos, new THREE.Vector3(0, -half + 0.1, half)],
+  [agentSpecs[2].pos, new THREE.Vector3(half, -half + 0.1, half)],
+].forEach(([start, end]) => {
+  const mid = new THREE.Vector3().lerpVectors(start, end, 0.5);
+  mid.y -= 0.24;
+  const curve = new THREE.CatmullRomCurve3([start, mid, end]);
+  scene.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 20, 0.036, 8, false), cableMat));
+});
+
+// Главная флагманская сфера ИИ высоко над кубом (пользователь смотрит на нее снизу вверх как на небоскреб)
+const flagshipPos = new THREE.Vector3(0, 7.45, -1.3);
+const flagshipSphere = createTechnosphere({
+  radius: 2.55,
+  position: flagshipPos,
+  accentColor: 0x38bdf8,
+  secondaryColor: 0x7c3aed,
+  label: 'SECUDEX FLAGSHIP AI',
+  isFlagship: true,
+});
+
+// ---------------------------------------------------------------------------
+// 8. МНОГОСТРАНИЧНЫЙ ДОГОВОР (ВСЕГДА ЛИЦОМ К КАМЕРЕ, ВЫХОДИТ ИЗ ЗАДНЕЙ СТЕНКИ)
+// ---------------------------------------------------------------------------
+const contractPivot = new THREE.Group();
+contractPivot.position.set(0, 0.1, 0.15);
+scene.add(contractPivot);
+
+const pageCanvas = document.createElement('canvas');
+pageCanvas.width = 1024;
+pageCanvas.height = 1448;
+const pageCtx = pageCanvas.getContext('2d');
+const pageTex = new THREE.CanvasTexture(pageCanvas);
+pageTex.colorSpace = THREE.SRGBColorSpace;
+pageTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+function drawContractPage(pageData) {
+  const w = pageCanvas.width, h = pageCanvas.height;
+  const grad = pageCtx.createLinearGradient(0, 0, w, h);
+  grad.addColorStop(0, '#f4f0e8');
+  grad.addColorStop(1, '#e2dac9');
+  pageCtx.fillStyle = grad;
+  pageCtx.fillRect(0, 0, w, h);
+
+  pageCtx.strokeStyle = '#1e293b';
+  pageCtx.lineWidth = 4;
+  pageCtx.strokeRect(42, 42, w - 84, h - 84);
+  pageCtx.lineWidth = 1.5;
+  pageCtx.strokeRect(52, 52, w - 104, h - 104);
+
+  pageCtx.fillStyle = '#0f172a';
+  pageCtx.textAlign = 'center';
+  pageCtx.font = 'bold 34px Georgia, serif';
+  pageCtx.fillText(pageData.header, w / 2, 130);
+
+  pageCtx.font = 'italic 22px Georgia, serif';
+  pageCtx.fillStyle = '#475569';
+  pageCtx.fillText(`Реестр SECUDEX • Экземпляр № 884-СД • Лист ${pageData.pageNum} из ${CONTRACT_PAGES.length}`, w / 2, 180);
+
+  pageCtx.textAlign = 'left';
+  const bodyLines = [
+    'Настоящая страница договора передаётся в защищённый контур куба',
+    'для извлечения юридических, финансовых и арбитражных обязательств.',
+    '',
+    `КЛЮЧЕВОЙ ПУНКТ (${pageData.riskCode}):`,
+    pageData.clause,
+    '',
+    'ДОПОЛНИТЕЛЬНЫЕ УСЛОВИЯ ИСПОЛНЕНИЯ:',
+    'Обязательства сторон фиксируются криптографическим слепком',
+    'и подлежат немедленному исполнению после верификации.',
+  ];
+  let y = 290;
+  bodyLines.forEach((line, idx) => {
+    const isHighlight = idx === 3 || idx === 4;
+    pageCtx.font = isHighlight ? 'bold 26px Georgia, serif' : '24px Georgia, serif';
+    pageCtx.fillStyle = idx === 3 ? '#be123c' : '#1e293b';
+    // Перенос длинной строки
+    const words = line.split(' ');
+    let cur = '';
+    for (const word of words) {
+      if ((cur + word).length > 46) {
+        pageCtx.fillText(cur.trim(), 86, y);
+        cur = word + ' ';
+        y += 38;
+      } else {
+        cur += word + ' ';
+      }
+    }
+    if (cur.trim()) pageCtx.fillText(cur.trim(), 86, y);
+    y += 46;
+  });
+
+  // Выделенная плашка риска на самой странице
+  pageCtx.fillStyle = 'rgba(225, 29, 72, 0.10)';
+  pageCtx.strokeStyle = 'rgba(225, 29, 72, 0.55)';
+  pageCtx.lineWidth = 3;
+  pageCtx.fillRect(82, 820, w - 164, 150);
+  pageCtx.strokeRect(82, 820, w - 164, 150);
+  pageCtx.fillStyle = '#9f1239';
+  pageCtx.font = 'bold 24px Arial, sans-serif';
+  pageCtx.fillText(`АНАЛИЗ КОНТУРА • ${pageData.riskCode} (${pageData.severity})`, 108, 868);
+  pageCtx.fillStyle = '#0f172a';
+  pageCtx.font = 'bold 25px Arial, sans-serif';
+  pageCtx.fillText(pageData.riskText, 108, 922);
+
+  // Синяя печать и подпись внизу листа
+  pageCtx.save();
+  pageCtx.translate(250, 1210);
+  pageCtx.strokeStyle = 'rgba(29, 78, 216, 0.85)';
+  pageCtx.lineWidth = 5;
+  pageCtx.beginPath(); pageCtx.arc(0, 0, 82, 0, Math.PI * 2); pageCtx.stroke();
+  pageCtx.font = 'bold 17px Arial, sans-serif';
+  pageCtx.fillStyle = 'rgba(29, 78, 216, 0.9)';
+  pageCtx.textAlign = 'center';
+  pageCtx.fillText('SECUDEX', 0, -6);
+  pageCtx.font = '14px Arial, sans-serif';
+  pageCtx.fillText(`ЛИСТ 0${pageData.pageNum}`, 0, 18);
+  pageCtx.restore();
+
+  pageCtx.strokeStyle = '#1d4ed8';
+  pageCtx.lineWidth = 4;
+  pageCtx.beginPath();
+  pageCtx.moveTo(640, 1220);
+  pageCtx.bezierCurveTo(680, 1150, 750, 1270, 830, 1190);
+  pageCtx.stroke();
+
+  pageTex.needsUpdate = true;
+}
+drawContractPage(CONTRACT_PAGES[0]);
+
+// Активный лист + фоновая стопка прошедших листов
+const pageMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(2.25, 3.18),
+  new THREE.MeshLambertMaterial({ map: pageTex, side: THREE.FrontSide })
+);
+contractPivot.add(pageMesh);
+
+// Лазерная плоскость сканирования по лицевой поверхности договора
+const scanBarMat = new THREE.MeshBasicMaterial({
+  color: 0x38bdf8, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false,
+});
+const scanBar = new THREE.Mesh(new THREE.PlaneGeometry(2.38, 0.14), scanBarMat);
+scanBar.position.z = 0.03;
+pageMesh.add(scanBar);
+
+// ---------------------------------------------------------------------------
+// 9. ГРАФИЧЕСКИЕ ПОТОКИ: ЛУЧИ СКАНИРОВАНИЯ, ПАКЕТЫ РИСКОВ, ПОТОК К ФЛАГМАНУ И ФИНАЛЬНЫЙ ИМПУЛЬС
+// ---------------------------------------------------------------------------
+// Луч сканирования от активного агента к странице договора
+const agentBeamMat = new THREE.MeshBasicMaterial({
+  color: 0x38bdf8, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+});
+const agentScanBeam = new THREE.Mesh(new THREE.ConeGeometry(1.15, 3.6, 4, 1, true), agentBeamMat);
+agentScanBeam.visible = false;
+scene.add(agentScanBeam);
+
+// Выделенный пакет риска, летящий от страницы к агенту
+const packetGroup = new THREE.Group();
+packetGroup.visible = false;
+const packetCore = new THREE.Mesh(
+  new THREE.OctahedronGeometry(0.16, 0),
+  new THREE.MeshBasicMaterial({ color: 0xff3b5c })
+);
+const packetHalo = new THREE.Mesh(
+  new THREE.RingGeometry(0.2, 0.28, 16),
+  new THREE.MeshBasicMaterial({ color: 0xff99aa, side: THREE.DoubleSide, transparent: true, opacity: 0.85 })
+);
+packetGroup.add(packetCore, packetHalo);
+scene.add(packetGroup);
+
+// Потоки передачи от 3 агентов вверх к Флагману
+const transferStreams = agentSpecs.map((spec, idx) => {
+  const start = spec.pos.clone();
+  const end = flagshipPos.clone().add(new THREE.Vector3((idx - 1) * 1.3, -1.8, 0.6));
+  const mid = new THREE.Vector3().lerpVectors(start, end, 0.5);
+  mid.x += (idx - 1) * 1.4;
+  mid.z += 1.6;
+  const curve = new THREE.CatmullRomCurve3([start, mid, end]);
+  const tubeMat = new THREE.MeshBasicMaterial({
+    color: spec.accent, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 40, 0.055, 8, false), tubeMat);
+  tube.visible = false;
+  scene.add(tube);
+
+  const capsules = [];
+  for (let c = 0; c < 4; c++) {
+    const cap = new THREE.Mesh(
+      new THREE.SphereGeometry(0.14, 10, 10),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 })
+    );
+    cap.visible = false;
+    scene.add(cap);
+    capsules.push(cap);
+  }
+  return { curve, tube, tubeMat, capsules };
+});
+
+// Мощный полярный импульс, вырывающийся вверх из северного полюса Флагманской сферы
+const polarBeamGroup = new THREE.Group();
+polarBeamGroup.position.set(flagshipPos.x, flagshipPos.y + flagshipSphere.radius - 0.1, flagshipPos.z);
+polarBeamGroup.visible = false;
+
+const polarCoreMat = new THREE.MeshBasicMaterial({
+  color: 0xffffff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false,
+});
+const polarOuterMat = new THREE.MeshBasicMaterial({
+  color: 0x38bdf8, transparent: true, opacity: 0.52, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+});
+const polarCore = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.42, 95, 16, 1, true), polarCoreMat);
+polarCore.position.y = 47.5;
+const polarOuter = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 1.35, 95, 16, 1, true), polarOuterMat);
+polarOuter.position.y = 47.5;
+polarBeamGroup.add(polarCore, polarOuter);
+scene.add(polarBeamGroup);
+
+// ---------------------------------------------------------------------------
+// 10. ОДИНОКОЕ ОКНО ВДАЛЕКЕ С РАЗМЫТЫМ ПОРТРЕТОМ ЮРИСТА (С ДРУГОЙ СТОРОНЫ ЭКРАНА)
+// ---------------------------------------------------------------------------
+function createBlurredLawyerWindow() {
+  const winGroup = new THREE.Group();
+  winGroup.position.set(0, 62, -38);
+  winGroup.visible = false;
+
+  const c = document.createElement('canvas');
+  c.width = 1024;
+  c.height = 640;
+  const ctx = c.getContext('2d');
+
+  // Глубокий темно-синий фон кабинета за окном экрана
+  const bg = ctx.createRadialGradient(512, 320, 40, 512, 320, 540);
+  bg.addColorStop(0, '#1e3a5f');
+  bg.addColorStop(0.55, '#0f172a');
+  bg.addColorStop(1, '#020617');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, 1024, 640);
+
+  // Мягкое боке / эффект глубины резкости на лице юриста за экраном
+  ctx.save();
+  ctx.filter = 'blur(14px)';
+
+  // Плечи и воротник пиджака
+  ctx.fillStyle = '#0b1120';
+  ctx.beginPath();
+  ctx.ellipse(512, 620, 260, 190, 0, Math.PI, 0);
+  ctx.fill();
+
+  // Воротник рубашки
+  ctx.fillStyle = '#cbd5e1';
+  ctx.beginPath();
+  ctx.moveTo(430, 470); ctx.lineTo(512, 560); ctx.lineTo(594, 470);
+  ctx.closePath();
+  ctx.fill();
+
+  // Лицо, подсвеченное синим светом монитора
+  const faceGrad = ctx.createRadialGradient(512, 290, 25, 512, 310, 170);
+  faceGrad.addColorStop(0, '#bae6fd');
+  faceGrad.addColorStop(0.55, '#64748b');
+  faceGrad.addColorStop(1, '#1e293b');
+  ctx.fillStyle = faceGrad;
+  ctx.beginPath();
+  ctx.ellipse(512, 300, 102, 134, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Прическа
+  ctx.fillStyle = '#090d16';
+  ctx.beginPath();
+  ctx.ellipse(512, 196, 108, 56, 0, Math.PI, 0);
+  ctx.fill();
+
+  // Блики на очках от экрана
+  ctx.strokeStyle = 'rgba(125, 211, 252, 0.85)';
+  ctx.lineWidth = 6;
+  ctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
+  ctx.fillRect(435, 272, 64, 34);
+  ctx.strokeRect(435, 272, 64, 34);
+  ctx.fillRect(525, 272, 64, 34);
+  ctx.strokeRect(525, 272, 64, 34);
+
+  // Мягкое свечение монитора между зрителем и юристом
+  const glow = ctx.createRadialGradient(512, 330, 30, 512, 330, 340);
+  glow.addColorStop(0, 'rgba(125, 211, 252, 0.35)');
+  glow.addColorStop(1, 'rgba(56, 189, 248, 0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, 1024, 640);
+  ctx.restore();
+
+  // Тонкий интерфейс/код на стекле со стороны юриста
+  ctx.strokeStyle = 'rgba(125, 211, 252, 0.45)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(24, 24, 976, 592);
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+  const screenPlane = new THREE.Mesh(
+    new THREE.PlaneGeometry(10.5, 6.56),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.96 })
+  );
+  const frameBox = new THREE.Mesh(
+    new THREE.BoxGeometry(11.1, 7.1, 0.28),
+    new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.85, roughness: 0.25 })
+  );
+  frameBox.position.z = -0.18;
+  const rim = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(11.15, 7.15, 0.32)),
+    new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.75 })
+  );
+  winGroup.add(frameBox, screenPlane, rim);
+  scene.add(winGroup);
+  return winGroup;
+}
+const lawyerWindow = createBlurredLawyerWindow();
+
+// Полосы ускорения (speed lines) для броска камеры к окну юриста
+const speedStreaksGroup = new THREE.Group();
+speedStreaksGroup.visible = false;
+const streakCount = 140;
+const streakPos = new Float32Array(streakCount * 6);
+for (let i = 0; i < streakCount; i++) {
+  const a = Math.random() * Math.PI * 2;
+  const rad = 1.6 + Math.random() * 8.5;
+  const x = Math.cos(a) * rad;
+  const y = Math.sin(a) * rad;
+  const z = -Math.random() * 28;
+  const len = 1.4 + Math.random() * 2.8;
+  streakPos[i * 6] = x; streakPos[i * 6 + 1] = y; streakPos[i * 6 + 2] = z;
+  streakPos[i * 6 + 3] = x; streakPos[i * 6 + 4] = y; streakPos[i * 6 + 5] = z + len;
+}
+const streakGeo = new THREE.BufferGeometry();
+streakGeo.setAttribute('position', new THREE.BufferAttribute(streakPos, 3));
+const speedStreaks = new THREE.LineSegments(
+  streakGeo,
+  new THREE.LineBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.75 })
+);
+speedStreaksGroup.add(speedStreaks);
+camera.add(speedStreaksGroup);
+scene.add(camera);
+
+// ---------------------------------------------------------------------------
+// 11. УПРАВЛЕНИЕ СОСТОЯНИЕМ, СЛАЙДАМИ И ИНТЕРФЕЙСОМ
+// ---------------------------------------------------------------------------
+const state = {
+  stage: STAGES.INTRO,
+  stageTimer: 0,
+  pageIndex: 0,
+  pageTimer: 0,
+  paused: false,
+  threatsExtracted: 0,
+};
+
+const stageLabelEl = document.getElementById('stage-label');
+const threatCountEl = document.getElementById('threat-count');
+const riskHintEl = document.getElementById('risk-hint');
+const riskListEl = document.getElementById('risk-list');
+const primaryBtn = document.getElementById('primary-action-btn');
+const pauseBtn = document.getElementById('pause-btn');
+const irisOverlay = document.getElementById('iris-overlay');
+const finalLogoScreen = document.getElementById('final-logo-screen');
+
+function syncUI() {
+  document.body.setAttribute('data-stage', state.stage);
+  document.body.setAttribute('data-threats', String(state.threatsExtracted));
+  threatCountEl.textContent = `УГРОЗ: ${state.threatsExtracted} / ${CONTRACT_PAGES.length}`;
+
+  const activeSlide = getSlideGroup(state.stage);
+  document.querySelectorAll('.slide-btn').forEach(btn => {
+    btn.classList.toggle('active', `slide-${btn.getAttribute('data-slide')}` === activeSlide);
+  });
+
+  const nextAct = getNextUserAction(state.stage);
+  if (nextAct) {
+    primaryBtn.disabled = false;
+    primaryBtn.textContent = nextAct.label;
+  } else {
+    primaryBtn.disabled = true;
+    primaryBtn.textContent = 'ИДЕТ ПРОЦЕСС...';
+  }
+
+  pauseBtn.disabled = !(state.stage === STAGES.SCAN);
+  pauseBtn.textContent = state.paused ? 'Продолжить скан' : 'Пауза скана';
+
+  const stageNames = {
+    [STAGES.INTRO]: 'Обзор пространства',
+    [STAGES.SCAN]: `Этап 1: Скан страницы ${state.pageIndex + 1}/${CONTRACT_PAGES.length}`,
+    [STAGES.SCAN_PAUSED]: 'Пауза скана — готов к передаче',
+    [STAGES.TRANSFER]: 'Этап 2: Передача в сферу флагмана',
+    [STAGES.ANALYSIS]: 'Этап 3: Глобальный анализ флагмана',
+    [STAGES.VERDICT]: 'Вердикт: Критический риск 84%',
+    [STAGES.POWERDOWN]: 'Обесточивание контура',
+    [STAGES.BEAM_ASCENT]: 'Импульс вверх — полёт камеры',
+    [STAGES.WINDOW_FOCUS]: 'Фокус на окно юриста',
+    [STAGES.WINDOW_RUSH]: 'Ускорение к экрану юриста',
+    [STAGES.COLLAPSE]: 'Свёртывание контура',
+    [STAGES.LOGO_REVEAL]: 'Завершено • SECUDEX',
+  };
+  stageLabelEl.textContent = stageNames[state.stage] || 'SECUDEX';
+}
+
+function appendRiskCard(pageData) {
+  state.threatsExtracted++;
+  riskHintEl.style.display = 'none';
+  const item = document.createElement('div');
+  item.className = 'risk-item';
+  item.innerHTML = `<b>#${state.threatsExtracted} • ${pageData.riskCode} (${pageData.severity}):</b> ${pageData.riskText}`;
+  riskListEl.prepend(item);
+  syncUI();
+}
+
+function resetVisualsForStage(targetStage) {
+  finalLogoScreen.classList.remove('visible');
+  irisOverlay.style.opacity = '0';
+  irisOverlay.style.background = 'radial-gradient(circle at center, transparent 0%, #030108 100%)';
+  speedStreaksGroup.visible = false;
+  polarBeamGroup.visible = false;
+  lawyerWindow.visible = false;
+  agentScanBeam.visible = false;
+  packetGroup.visible = false;
+  scanBarMat.opacity = 0;
+  transferStreams.forEach(s => {
+    s.tube.visible = false;
+    s.capsules.forEach(c => { c.visible = false; });
+  });
+  camera.fov = 48;
+  camera.updateProjectionMatrix();
+
+  // Восстановление освещения после возможного обесточивания
+  hemiLight.intensity = 0.9;
+  keyLight.intensity = 2.3;
+  rimLight.intensity = 1.8;
+  bottomLight.intensity = 3.8;
+  flagshipLight.color.setHex(0x38bdf8);
+  flagshipLight.intensity = 5.5;
+  flagshipSphere.coreMat.emissiveIntensity = 1.9;
+  flagshipSphere.outerMat.emissiveIntensity = 0.9;
+  flagshipSphere.armorMats?.forEach((m, idx) => { m.emissiveIntensity = idx === 2 || idx === 3 ? 1.25 : 0.9; });
+  flagshipSphere.updateVerdictHologram(false);
+  flagshipSphere.dataRingBandMat.opacity = 0.85;
+  flagshipSphere.dataRingCoreMat.opacity = 0.9;
+  electrodeGlowMat.emissiveIntensity = 1.65;
+  agentSpheres.forEach(a => {
+    a.coreMat.emissiveIntensity = 1.9;
+    a.outerMat.emissiveIntensity = 0.9;
+    a.armorMats?.forEach((m, idx) => { m.emissiveIntensity = idx === 2 || idx === 3 ? 1.25 : 0.9; });
+    a.updateVerdictHologram(false);
+    a.dataRingBandMat.opacity = 0.72;
+    a.dataRingCoreMat.opacity = 0.9;
+  });
+
+  if (targetStage === STAGES.INTRO) {
+    state.threatsExtracted = 0;
+    state.pageIndex = 0;
+    riskListEl.innerHTML = '';
+    riskHintEl.style.display = 'block';
+    riskHintEl.textContent = 'Нажмите «ЗАПУСТИТЬ АНАЛИЗ» для старта сканирования договора';
+    drawContractPage(CONTRACT_PAGES[0]);
+    contractPivot.position.set(0, 0.1, 0.15);
+    flagshipSphere.updateProjection('idle', 'STANDBY // GLOBAL AI');
+    agentSpheres.forEach((a, i) => a.updateProjection('idle', `АГЕНТ-0${i + 1} // ГОТОВ`));
+  }
+}
+
+function enterStage(nextStage, triggerAudioKey = null) {
+  state.stage = nextStage;
+  state.stageTimer = 0;
+  state.paused = false;
+  resetVisualsForStage(nextStage);
+
+  if (nextStage === STAGES.SCAN) {
+    state.pageIndex = 0;
+    state.pageTimer = 0;
+    state.threatsExtracted = 0;
+    riskListEl.innerHTML = '';
+    riskHintEl.style.display = 'none';
+    drawContractPage(CONTRACT_PAGES[0]);
+    controls.enabled = true;
+  } else if (nextStage === STAGES.TRANSFER) {
+    // Если перепрыгнули сразу на слайд передачи — заполним все 5 рисков
+    if (state.threatsExtracted === 0) {
+      CONTRACT_PAGES.forEach(p => appendRiskCard(p));
+    }
+    flagshipSphere.updateProjection('idle', 'RECEIVING REPORTS...');
+  } else if (nextStage === STAGES.ANALYSIS) {
+    flagshipSphere.updateProjection('scan', 'DEEP SYNTHESIS // 5 PAGES');
+  } else if (nextStage === STAGES.VERDICT) {
+    flagshipSphere.updateProjection('verdict', '', '84%');
+    flagshipSphere.updateVerdictHologram(true, '84%', 0, state.threatsExtracted || CONTRACT_PAGES.length);
+  } else if (nextStage === STAGES.POWERDOWN) {
+    flagshipSphere.updateProjection('powerdown');
+    flagshipSphere.updateVerdictHologram(false);
+    agentSpheres.forEach(a => a.updateProjection('powerdown'));
+  } else if (nextStage === STAGES.BEAM_ASCENT) {
+    polarBeamGroup.visible = true;
+    lawyerWindow.visible = true;
+    controls.enabled = false;
+  } else if (nextStage === STAGES.WINDOW_FOCUS) {
+    polarBeamGroup.visible = true;
+    lawyerWindow.visible = true;
+    controls.enabled = false;
+  } else if (nextStage === STAGES.WINDOW_RUSH) {
+    polarBeamGroup.visible = true;
+    lawyerWindow.visible = true;
+    speedStreaksGroup.visible = true;
+    controls.enabled = false;
+  } else if (nextStage === STAGES.COLLAPSE) {
+    lawyerWindow.visible = true;
+    controls.enabled = false;
+  } else if (nextStage === STAGES.LOGO_REVEAL) {
+    finalLogoScreen.classList.add('visible');
+    controls.enabled = false;
+  } else {
+    controls.enabled = true;
+  }
+
+  if (triggerAudioKey) playVoiceTrack(triggerAudioKey);
+  syncUI();
+}
+
+primaryBtn.addEventListener('click', () => {
+  const act = getNextUserAction(state.stage);
+  if (!act) return;
+  if (act.action === 'start_scan') enterStage(STAGES.SCAN, 'scan');
+  else if (act.action === 'start_transfer') enterStage(STAGES.TRANSFER, 'transfer');
+  else if (act.action === 'restart') enterStage(STAGES.INTRO, 'intro');
+});
+
+pauseBtn.addEventListener('click', () => {
+  if (state.stage !== STAGES.SCAN) return;
+  state.paused = !state.paused;
+  syncUI();
+});
+
+document.getElementById('reset-btn').addEventListener('click', () => {
+  enterStage(STAGES.INTRO, 'intro');
+});
+
+document.getElementById('final-replay-btn').addEventListener('click', () => {
+  enterStage(STAGES.INTRO, 'intro');
+});
+
+document.querySelectorAll('.slide-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const idx = Number(btn.getAttribute('data-slide'));
+    if (idx === 0) enterStage(STAGES.INTRO, 'intro');
+    else if (idx === 1) enterStage(STAGES.SCAN, 'scan');
+    else if (idx === 2) enterStage(STAGES.TRANSFER, 'transfer');
+    else if (idx === 3) enterStage(STAGES.ANALYSIS, 'finale');
+  });
+});
+
+document.getElementById('dock-toggle-btn').addEventListener('click', (e) => {
+  const wrap = document.getElementById('bottom-dock-wrap');
+  const collapsed = wrap.classList.toggle('collapsed');
+  e.currentTarget.textContent = collapsed ? 'Показать панель' : 'Свернуть панель';
+  e.currentTarget.setAttribute('aria-expanded', String(!collapsed));
+});
+
+document.getElementById('audio-drawer-btn').addEventListener('click', (e) => {
+  const drawer = document.getElementById('audio-drawer');
+  const open = drawer.classList.toggle('open');
+  e.currentTarget.setAttribute('aria-expanded', String(open));
+});
+
+document.getElementById('audio-mute-btn').addEventListener('click', (e) => {
+  audioState.muted = !audioState.muted;
+  if (audioState.muted) audioState.player.pause();
+  e.currentTarget.textContent = audioState.muted ? 'Звук: ВЫКЛ' : 'Звук: ВКЛ';
+  document.getElementById('audio-drawer-btn').textContent = audioState.muted ? 'Озвучка: Выкл' : 'Озвучка: Вкл';
+});
+
+// Поддержка ?autostart=1 для автоматической проверки
+if (new URLSearchParams(window.location.search).get('autostart') === '1') {
+  enterStage(STAGES.SCAN);
+} else {
+  syncUI();
+}
+
+// ---------------------------------------------------------------------------
+// 12. ПЛАВНАЯ АНИМАЦИЯ ВСЕХ СЛОЕВ И КАМЕРЫ (С ПОДДЕРЖКОЙ afterDraw НА SOFTWARE WEBGL)
+// ---------------------------------------------------------------------------
+function updateTechnosphereAnimation(sphere, dt, t, intensity = 1.0) {
+  sphere.coreMesh.rotation.y += dt * 1.1 * intensity;
+  sphere.coreMesh.rotation.x += dt * 0.7 * intensity;
+  if (sphere.coreCage) {
+    sphere.coreCage.rotation.y -= dt * 0.65 * intensity;
+    sphere.coreCage.rotation.z += dt * 0.45 * intensity;
+  }
+  const pulse = 0.94 + Math.sin(t * 3.8) * 0.08 * intensity;
+  sphere.coreMesh.scale.setScalar(pulse);
+
+  sphere.rings.forEach((ring, idx) => {
+    ring.rotation.x += dt * (0.55 + idx * 0.25) * intensity * (idx % 2 === 0 ? 1 : -1);
+    ring.rotation.y += dt * (0.7 + idx * 0.2) * intensity;
+  });
+
+  sphere.dataPoints.rotation.y -= dt * 0.35 * intensity;
+  sphere.codeSphere.rotation.y += dt * 0.25 * intensity;
+  sphere.codeTex.offset.y -= dt * 0.18 * intensity;
+  sphere.codeTex.offset.x += dt * 0.06 * intensity;
+
+  sphere.wireShell.rotation.y -= dt * 0.12 * intensity;
+  if (sphere.dataRingGroup) {
+    sphere.dataRingGroup.rotation.y += dt * 0.42 * intensity;
+    sphere.dataRingTex.offset.x -= dt * 0.16 * intensity;
+  }
+  if (sphere.outerMat.userData.shader) {
+    sphere.outerMat.userData.shader.uniforms.uTime.value = t * intensity;
+  }
+}
+
+function dampCam(targetPos, targetLook, lambda, dt) {
+  const alpha = 1 - Math.exp(-lambda * dt);
+  camera.position.lerp(targetPos, alpha);
+  controls.target.lerp(targetLook, alpha);
+}
+
+let lastFrameTime = performance.now();
+let startTimestamp = lastFrameTime;
+let projRefreshAccum = 0;
+
+function updateScene(now) {
+  const maxDt = isSoftwareGl ? 0.25 : 0.08;
+  const dt = Math.min((now - lastFrameTime) / 1000, maxDt);
+  lastFrameTime = now;
+  const t = (now - startTimestamp) / 1000;
+
+  // Медленное вращение равномерных галактик и колец куба
+  spaceData.galaxies.forEach((g, idx) => {
+    g.rotation.y += dt * 0.025 * (idx % 2 === 0 ? 1 : -1);
+  });
+  cyberCoils.forEach((coil, idx) => {
+    coil.rotation.z += dt * (idx % 2 === 0 ? 0.5 : -0.5);
+  });
+
+  // Договор всегда развернут строго лицом к камере (без переворота)
+  _v1.set(camera.position.x, contractPivot.position.y, camera.position.z);
+  contractPivot.lookAt(_v1);
+
+  // Живая анимация 4 техносфер ИИ (усиливается во время активного анализа)
+  const agentActivity = state.stage === STAGES.SCAN ? 1.8 : (state.stage === STAGES.TRANSFER ? 2.2 : 1.0);
+  const flagshipActivity = state.stage === STAGES.ANALYSIS ? 2.8 : (state.stage === STAGES.POWERDOWN ? 0.15 : 1.0);
+  agentSpheres.forEach(a => updateTechnosphereAnimation(a, dt, t, agentActivity));
+  updateTechnosphereAnimation(flagshipSphere, dt, t, flagshipActivity);
+
+  // Периодическое обновление живых проекций на внешней поверхности сфер
+  projRefreshAccum += dt;
+  if (projRefreshAccum >= 0.45 && state.stage !== STAGES.VERDICT && state.stage !== STAGES.POWERDOWN) {
+    projRefreshAccum = 0;
+    if (state.stage === STAGES.SCAN) {
+      const curPage = CONTRACT_PAGES[state.pageIndex];
+      agentSpheres.forEach((a, i) => {
+        a.updateProjection(
+          i === curPage.agentIndex ? 'scan' : 'idle',
+          i === curPage.agentIndex ? `EXTRACT: ${curPage.riskCode}` : `BUFFER: ${state.threatsExtracted} RISKS`
+        );
+      });
+      flagshipSphere.updateProjection('idle', `WAITING AGENTS // ${state.threatsExtracted}/${CONTRACT_PAGES.length}`);
+    } else if (state.stage === STAGES.ANALYSIS) {
+      flagshipSphere.updateProjection('scan', 'COMPUTING GLOBAL RISK MATRIX...');
+    } else if (state.stage === STAGES.INTRO) {
+      flagshipSphere.updateProjection('idle', 'SECUDEX FLAGSHIP // READY');
+    }
+  }
+
+  // Плавная логика по стадиям
+  if (!state.paused) {
+    state.stageTimer += dt;
+  }
+
+  if (state.stage === STAGES.INTRO) {
+    // Красивый монументальный разворот пространства перед кубом (3.6 сек), взгляд снизу вверх на флагман
+    if (!userInteracting && state.stageTimer < STAGE_DURATIONS.intro) {
+      const p = Math.min(state.stageTimer / STAGE_DURATIONS.intro, 1);
+      const ease = 1 - Math.pow(1 - p, 3);
+      _v2.set(-4.6 * (1 - ease), -0.35 + 0.25 * ease, (isMobile ? 21.5 : 17.8) - 1.3 * ease);
+      _v3.set(0, 2.25 + 0.4 * ease, -0.3);
+      dampCam(_v2, _v3, 3.2, dt);
+    }
+    portalGlowMat.opacity = 0.28 + Math.sin(t * 2.2) * 0.08;
+
+  } else if (state.stage === STAGES.SCAN) {
+    // Последовательное ускоряющееся извлечение страниц из закрытой задней стены куба
+    const curPage = CONTRACT_PAGES[state.pageIndex];
+    const pageDur = getPageDuration(state.pageIndex);
+
+    if (!state.paused) {
+      state.pageTimer += dt;
+    }
+    const p = Math.min(state.pageTimer / pageDur, 1);
+    const activeAgent = agentSpheres[curPage.agentIndex];
+
+    // Фаза A (0..0.32): Лист плавно выходит из закрытой задней стены в центр куба
+    if (p < 0.32) {
+      const enterP = p / 0.32;
+      const ease = 1 - Math.pow(1 - enterP, 3);
+      contractPivot.position.set(0, 0.1, (-half + 0.32) + (half - 0.12) * ease);
+      portalGlowMat.opacity = 0.85;
+      agentScanBeam.visible = false;
+      scanBarMat.opacity = 0;
+      packetGroup.visible = false;
+    } else if (p < 0.72) {
+      // Фаза B (0.32..0.72): Агент проецирует сканирующий луч на договор и считывает страницу
+      const scanP = (p - 0.32) / 0.40;
+      contractPivot.position.set(0, 0.1, 0.2 + Math.sin(t * 2.5) * 0.03);
+      portalGlowMat.opacity = 0.32;
+
+      scanBarMat.opacity = 0.9;
+      scanBar.position.y = 1.45 - scanP * 2.9;
+
+      // Позиционируем конус луча от активного агента к центру страницы
+      agentScanBeam.visible = true;
+      _v2.copy(activeAgent.group.position);
+      _v3.set(0, 0.1 + scanBar.position.y * 0.45, 0.25);
+      _v4.subVectors(_v3, _v2);
+      const len = _v4.length();
+      agentScanBeam.position.lerpVectors(_v2, _v3, 0.5);
+      agentScanBeam.scale.set(1, len / 3.6, 1);
+      agentScanBeam.quaternion.setFromUnitVectors(_up, _v4.normalize());
+      packetGroup.visible = false;
+    } else {
+      // Фаза C (0.72..1.0): Извлечённый риск вылетает с договора прямо в сферу-агента
+      const pullP = (p - 0.72) / 0.28;
+      const ease = pullP * pullP * (3 - 2 * pullP);
+      agentScanBeam.visible = false;
+      scanBarMat.opacity = 0;
+      packetGroup.visible = true;
+      _v2.set(0, 0.05, 0.35);
+      packetGroup.position.lerpVectors(_v2, activeAgent.group.position, ease);
+      packetGroup.rotation.y += dt * 7;
+      packetGroup.scale.setScalar(1.15 - ease * 0.55);
+    }
+
+    if (!userInteracting) {
+      _v2.set(0, -0.1, isMobile ? 20.2 : 16.3);
+      _v3.set(0, 2.35, -0.2);
+      dampCam(_v2, _v3, 2.8, dt);
+    }
+
+    if (p >= 1) {
+      packetGroup.visible = false;
+      appendRiskCard(curPage);
+      if (state.pageIndex < CONTRACT_PAGES.length - 1) {
+        state.pageIndex++;
+        state.pageTimer = 0;
+        drawContractPage(CONTRACT_PAGES[state.pageIndex]);
+      } else {
+        // Пауза анимаций скана — ждём нажатия кнопки «Передать на анализ флагмана»
+        enterStage(STAGES.SCAN_PAUSED);
+      }
+    }
+
+  } else if (state.stage === STAGES.SCAN_PAUSED) {
+    if (!userInteracting) {
+      _v2.set(0, -0.1, isMobile ? 20.2 : 16.3);
+      _v3.set(0, 2.55, -0.2);
+      dampCam(_v2, _v3, 2.5, dt);
+    }
+
+  } else if (state.stage === STAGES.TRANSFER) {
+    // Плавная 3.4с передача отчётов от 3 агентов вверх в сферу Флагмана
+    const p = Math.min(state.stageTimer / STAGE_DURATIONS.transfer, 1);
+    transferStreams.forEach((stream, idx) => {
+      stream.tube.visible = true;
+      stream.tubeMat.opacity = 0.55 * Math.sin(p * Math.PI);
+      stream.capsules.forEach((cap, cIdx) => {
+        cap.visible = true;
+        const cp = (p * 1.65 + cIdx * 0.22 + idx * 0.08) % 1;
+        cap.position.copy(stream.curve.getPoint(cp));
+      });
+    });
+
+    // Камера слегка опускается и смотрит вверх на возвышающийся Флагман
+    _v2.set(0, -1.1, isMobile ? 16.2 : 13.0);
+    _v3.set(0, 4.8, -0.8);
+    dampCam(_v2, _v3, 2.4, dt);
+
+    if (p >= 1) {
+      enterStage(STAGES.ANALYSIS, 'finale');
+    }
+
+  } else if (state.stage === STAGES.ANALYSIS) {
+    // Полный анализ флагманской сферой (пользователь смотрит снизу вверх как на высокое здание)
+    const p = Math.min(state.stageTimer / STAGE_DURATIONS.analysis, 1);
+    _v2.set(Math.sin(p * 0.9) * 1.4, -1.2, isMobile ? 13.0 : 10.6);
+    _v3.set(0, 7.6, -1.3);
+    dampCam(_v2, _v3, 2.8, dt);
+    flagshipLight.intensity = 6.5 + Math.sin(t * 10) * 1.5;
+
+    if (p >= 1) {
+      enterStage(STAGES.VERDICT);
+    }
+
+  } else if (state.stage === STAGES.VERDICT) {
+    // Резкое вынесение вердикта в процентах на поверхности флагмана и в голограмме над ним
+    const p = Math.min(state.stageTimer / STAGE_DURATIONS.verdict, 1);
+    _v2.set(0, 1.45, isMobile ? 13.6 : 11.4);
+    _v3.set(0, 8.95, -1.3);
+    dampCam(_v2, _v3, 4.5, dt);
+    flagshipLight.color.setHex(0xff3b5c);
+    flagshipLight.intensity = 8.0;
+    if (projRefreshAccum >= 0.08) {
+      projRefreshAccum = 0;
+      flagshipSphere.updateVerdictHologram(true, '84%', state.stageTimer, state.threatsExtracted || CONTRACT_PAGES.length);
+    }
+
+    if (p >= 1) {
+      enterStage(STAGES.POWERDOWN);
+    }
+
+  } else if (state.stage === STAGES.POWERDOWN) {
+    // Обесточивание системы перед выбросом импульса
+    const p = Math.min(state.stageTimer / STAGE_DURATIONS.powerdown, 1);
+    const dim = 1 - p * 0.92;
+    hemiLight.intensity = 0.9 * dim;
+    keyLight.intensity = 2.3 * dim;
+    rimLight.intensity = 1.8 * dim;
+    bottomLight.intensity = 3.8 * dim;
+    flagshipLight.intensity = 5.5 * dim;
+    flagshipSphere.coreMat.emissiveIntensity = 1.9 * dim;
+    flagshipSphere.outerMat.emissiveIntensity = 0.9 * dim;
+    flagshipSphere.dataRingBandMat.opacity = 0.85 * dim;
+    flagshipSphere.dataRingCoreMat.opacity = 0.9 * dim;
+    flagshipSphere.armorMats?.forEach((m, idx) => { m.emissiveIntensity = (idx === 2 || idx === 3 ? 1.25 : 0.9) * dim; });
+    electrodeGlowMat.emissiveIntensity = 1.65 * dim;
+    agentSpheres.forEach(a => {
+      a.coreMat.emissiveIntensity = 1.9 * dim;
+      a.outerMat.emissiveIntensity = 0.9 * dim;
+      a.dataRingBandMat.opacity = 0.72 * dim;
+      a.dataRingCoreMat.opacity = 0.9 * dim;
+      a.armorMats?.forEach((m, idx) => { m.emissiveIntensity = (idx === 2 || idx === 3 ? 1.25 : 0.9) * dim; });
+    });
+
+    if (p >= 1) {
+      enterStage(STAGES.BEAM_ASCENT);
+    }
+
+  } else if (state.stage === STAGES.BEAM_ASCENT) {
+    // Импульс вырывается из северного полюса сферы, камера быстро летит вверх ровно 2.5 секунды и резко останавливается
+    const p = Math.min(state.stageTimer / STAGE_DURATIONS.beam_ascent, 1);
+    const ease = p < 0.85 ? Math.pow(p / 0.85, 2.2) * 0.92 : 0.92 + ((p - 0.85) / 0.15) * 0.08;
+    const camY = 10.5 + ease * 51.5; // от 10.5 до 62.0 ровно за 2.5с
+    camera.position.set(0, camY, 4.5 - ease * 10.5);
+    controls.target.set(0, camY + 1.2 - ease * 1.2, -38);
+    polarCoreMat.opacity = 0.95;
+    polarOuterMat.opacity = 0.55 + Math.sin(t * 18) * 0.12;
+
+    if (p >= 1) {
+      // Резкая остановка напротив далекого одинокого окна с юристом
+      camera.position.set(0, 62, -6.0);
+      controls.target.set(0, 62, -38);
+      enterStage(STAGES.WINDOW_FOCUS);
+    }
+
+  } else if (state.stage === STAGES.WINDOW_FOCUS) {
+    // Взгляд вдаль на размытое в перспективе окно, где видно лицо юриста с другой стороны экрана
+    const p = Math.min(state.stageTimer / STAGE_DURATIONS.window_focus, 1);
+    camera.position.set(0, 62, -6.0 - p * 1.8);
+    controls.target.set(0, 62, -38);
+
+    if (p >= 1) {
+      enterStage(STAGES.WINDOW_RUSH);
+    }
+
+  } else if (state.stage === STAGES.WINDOW_RUSH) {
+    // Сильное ускорение камеры вперед к окну вместе с лучом
+    const p = Math.min(state.stageTimer / STAGE_DURATIONS.window_rush, 1);
+    const rush = Math.pow(p, 2.4);
+    camera.position.set(0, 62, -7.8 - rush * 26.5);
+    controls.target.set(0, 62, -40);
+    camera.fov = 46 + rush * 38;
+    camera.updateProjectionMatrix();
+
+    // Анимация полос ускорения
+    const posAttr = streakGeo.attributes.position;
+    for (let i = 0; i < streakCount; i++) {
+      let z1 = posAttr.getZ(i * 2) + dt * (35 + rush * 80);
+      let z2 = posAttr.getZ(i * 2 + 1) + dt * (35 + rush * 80);
+      if (z1 > 2) { z1 -= 30; z2 -= 30; }
+      posAttr.setZ(i * 2, z1);
+      posAttr.setZ(i * 2 + 1, z2);
+    }
+    posAttr.needsUpdate = true;
+
+    if (p >= 1) {
+      enterStage(STAGES.COLLAPSE);
+    }
+
+  } else if (state.stage === STAGES.COLLAPSE) {
+    // Сворачивание в темноту перед резким появлением логотипа SECUDEX
+    const p = Math.min(state.stageTimer / STAGE_DURATIONS.collapse, 1);
+    const radiusPct = Math.max(0, 100 - p * 108);
+    irisOverlay.style.opacity = '1';
+    irisOverlay.style.background = `radial-gradient(circle at center, rgba(3,1,8,${p.toFixed(2)}) 0%, #030108 ${radiusPct.toFixed(1)}%)`;
+
+    if (p >= 1) {
+      enterStage(STAGES.LOGO_REVEAL);
+    }
+  }
+
+  controls.update();
+}
+
+let frameId = 0;
+function afterDraw(cb) {
+  try {
+    const gl = renderer.getContext();
+    const sync = gl.fenceSync && gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    if (!sync) {
+      frameId = window.setTimeout(cb, 16);
+      return;
+    }
+    gl.flush();
+    const poll = () => {
+      const st = gl.getSyncParameter(sync, gl.SYNC_STATUS);
+      if (st === gl.UNSIGNALED) {
+        frameId = window.setTimeout(poll, 5);
+      } else {
+        gl.deleteSync(sync);
+        frameId = window.setTimeout(cb, 16);
+      }
+    };
+    frameId = window.setTimeout(poll, 5);
+  } catch {
+    frameId = window.setTimeout(cb, 16);
+  }
+}
+
+function tick(now) {
+  updateScene(typeof now === 'number' ? now : performance.now());
+  renderer.render(scene, camera);
+  if (isSoftwareGl) {
+    afterDraw(() => tick(performance.now()));
+  } else {
+    frameId = requestAnimationFrame(tick);
+  }
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+if (!isSoftwareGl) {
+  renderer.compile(scene, camera);
+}
+tick(performance.now());
+</script>
+</body>
+</html>

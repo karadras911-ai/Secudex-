@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SECUDEX — Квантовый Катализатор 3D</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #030108;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #fff;
+    touch-action: none;
+  }
+  #canvas-container { position: fixed; inset: 0; z-index: 1; }
+  
+  /* Верхняя панель РИСК */
+  #risk-panel {
+    position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+    width: min(94vw, 520px);
+    background: rgba(18, 6, 14, 0.82);
+    border: 1px solid rgba(255, 55, 85, 0.45);
+    box-shadow: 0 0 24px rgba(255, 40, 75, 0.2), inset 0 0 18px rgba(255, 30, 60, 0.12);
+    border-radius: 14px;
+    padding: 12px 14px;
+    z-index: 10;
+    backdrop-filter: blur(10px);
+  }
+  .risk-header {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+  .risk-title {
+    font-weight: 900; letter-spacing: 3px; font-size: 16px;
+    color: #ff3b5c; text-shadow: 0 0 10px rgba(255, 59, 92, 0.7);
+  }
+  .risk-badge {
+    background: rgba(255, 59, 92, 0.16);
+    border: 1px solid rgba(255, 59, 92, 0.4);
+    border-radius: 999px; padding: 3px 12px;
+    font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #ffb3c0;
+  }
+  #clear-btn {
+    background: rgba(255, 59, 92, 0.18);
+    border: 1px solid rgba(255, 90, 115, 0.55);
+    color: #ffd6de; font-size: 11px; font-weight: 700; letter-spacing: 1px;
+    padding: 5px 12px; border-radius: 999px; cursor: pointer;
+    transition: all 0.2s;
+  }
+  #clear-btn:active { transform: scale(0.95); background: rgba(255, 59, 92, 0.4); }
+  #risk-hint {
+    margin-top: 8px; text-align: center; font-size: 12px; color: #b89aa8;
+  }
+  #risk-list {
+    margin-top: 8px; max-height: 110px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .risk-item {
+    background: rgba(45, 10, 22, 0.72);
+    border: 1px solid rgba(255, 65, 95, 0.35);
+    border-radius: 8px; padding: 7px 10px;
+    font-size: 11px; line-height: 1.35; color: #ffe4e8;
+    animation: fadeIn 0.35s ease;
+  }
+  .risk-item b { color: #ff4d6d; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Нижняя подсказка */
+  #bottom-hint {
+    position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
+    width: min(94vw, 560px);
+    background: rgba(14, 10, 26, 0.8);
+    border: 1px solid rgba(155, 110, 255, 0.35);
+    border-radius: 999px; padding: 7px 14px;
+    text-align: center; font-size: 11px; color: #d8c8ff;
+    z-index: 10; backdrop-filter: blur(8px);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #bottom-hint span { color: #9d7bff; font-weight: 700; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+
+<div id="risk-panel">
+  <div class="risk-header">
+    <div class="risk-title">РИСК</div>
+    <div class="risk-badge" id="threat-count">УГРОЗ: 0</div>
+    <button id="clear-btn">ОЧИСТИТЬ</button>
+  </div>
+  <div id="risk-hint">Нажмите на договор для квантового сканирования</div>
+  <div id="risk-list"></div>
+</div>
+
+<div id="bottom-hint"><span>Тап / Клик по договору:</span> Скан &bull; <span>1 палец:</span> Вращение &bull; <span>2 пальца:</span> Зум</div>
+<div id="canvas-container"></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const container = document.getElementById('canvas-container');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x030109);
+scene.fog = new THREE.FogExp2(0x030109, 0.014);
+
+const camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 140);
+const isMobile = window.innerWidth < 640;
+camera.position.set(0, 1.4, isMobile ? 12.2 : 9.4);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+container.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 4.2;
+controls.maxDistance = 38;
+controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+
+// 1. СТУДИЙНАЯ PBR-КАРТА ОТРАЖЕНИЙ (ЧТОБЫ МЕТАЛЛ И СТЕКЛО БЫЛИ ОБЪЕМНЫМИ, А НЕ 2D)
+function createEnvMap() {
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const envScene = new THREE.Scene();
+  envScene.background = new THREE.Color(0x090418);
+
+  const addPanel = (color, pos, scale) => {
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide })
+    );
+    m.position.set(...pos);
+    m.scale.set(...scale);
+    m.lookAt(0, 0, 0);
+    envScene.add(m);
+  };
+  addPanel(0x9b5cff, [0, 12, 8], [18, 8, 1]);
+  addPanel(0x38bdf8, [-14, 4, 6], [10, 14, 1]);
+  addPanel(0xe0d4ff, [12, -6, 10], [12, 10, 1]);
+  addPanel(0x581c87, [0, -14, -6], [20, 12, 1]);
+  addPanel(0xffffff, [6, 10, -12], [6, 6, 1]);
+
+  const rt = pmrem.fromScene(envScene, 0.04);
+  pmrem.dispose();
+  return rt.texture;
+}
+scene.environment = createEnvMap();
+
+// Процедурная текстура шлифованного металла (bump + roughness)
+function createBrushedMetalTex() {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 256;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#808080';
+  ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 1600; i++) {
+    const v = 105 + Math.floor(Math.random() * 55);
+    ctx.fillStyle = `rgb(${v},${v},${v})`;
+    ctx.fillRect(Math.random() * 256, Math.random() * 256, 28 + Math.random() * 60, 1);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(3, 3);
+  return tex;
+}
+const metalTex = createBrushedMetalTex();
+
+// Освещение сцены
+scene.add(new THREE.AmbientLight(0x3a2468, 1.4));
+const keyLight = new THREE.DirectionalLight(0xe9d8ff, 2.4);
+keyLight.position.set(6, 10, 8);
+scene.add(keyLight);
+
+const rimLight = new THREE.DirectionalLight(0x60a5fa, 1.8);
+rimLight.position.set(-8, 4, -6);
+scene.add(rimLight);
+
+const bottomLight = new THREE.PointLight(0x8b5cf6, 4.5, 18);
+bottomLight.position.set(0, -4.5, 3);
+scene.add(bottomLight);
+
+const flashLight = new THREE.PointLight(0xff3355, 0, 14);
+scene.add(flashLight);
+
+// 2. КОСМИЧЕСКОЕ ПРОСТРАНСТВО И ФИОЛЕТОВО-БЕЛО-СИНИЕ ГАЛАКТИКИ
+function createSpaceAndGalaxies() {
+  const spaceGroup = new THREE.Group();
+  // Звезды
+  const starCount = 2400;
+  const sPos = new Float32Array(starCount * 3);
+  const sCol = new Float32Array(starCount * 3);
+  const palette = [new THREE.Color(0xffffff), new THREE.Color(0xc4b5fd), new THREE.Color(0x93c5fd), new THREE.Color(0xe879f9)];
+  for (let i = 0; i < starCount; i++) {
+    const r = 24 + Math.random() * 65;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    sPos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    sPos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+    sPos[i * 3 + 2] = r * Math.cos(phi);
+    const col = palette[i % palette.length];
+    sCol[i * 3] = col.r; sCol[i * 3 + 1] = col.g; sCol[i * 3 + 2] = col.b;
+  }
+  const sGeo = new THREE.BufferGeometry();
+  sGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
+  sGeo.setAttribute('color', new THREE.BufferAttribute(sCol, 3));
+  spaceGroup.add(new THREE.Points(sGeo, new THREE.PointsMaterial({ size: 0.16, vertexColors: true, transparent: true, opacity: 0.85 })));
+
+  // Спиральные цифровые галактики вдалеке
+  const createGalaxy = (pos, rot, scale) => {
+    const count = 1800;
+    const gPos = new Float32Array(count * 3);
+    const gCol = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const arm = i % 3;
+      const dist = Math.pow(Math.random(), 1.4) * 9;
+      const angle = dist * 0.65 + (arm * Math.PI * 2) / 3 + (Math.random() - 0.5) * 0.45;
+      gPos[i * 3] = Math.cos(angle) * dist;
+      gPos[i * 3 + 1] = (Math.random() - 0.5) * (0.6 / (1 + dist * 0.3));
+      gPos[i * 3 + 2] = Math.sin(angle) * dist;
+
+      const c = dist < 2 ? new THREE.Color(0xffffff) : (Math.random() > 0.45 ? new THREE.Color(0xa855f7) : new THREE.Color(0x60a5fa));
+      gCol[i * 3] = c.r; gCol[i * 3 + 1] = c.g; gCol[i * 3 + 2] = c.b;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(gPos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(gCol, 3));
+    const pts = new THREE.Points(geo, new THREE.PointsMaterial({
+      size: 0.14, vertexColors: true, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    pts.position.set(...pos);
+    pts.rotation.set(...rot);
+    pts.scale.setScalar(scale);
+    spaceGroup.add(pts);
+    return pts;
+  };
+
+  const g1 = createGalaxy([-18, 9, -34], [0.7, 0.3, 0.4], 1.3);
+  const g2 = createGalaxy([20, -7, -38], [-0.5, -0.4, 0.6], 1.1);
+  const g3 = createGalaxy([4, 17, -45], [1.1, 0.1, -0.3], 1.5);
+  scene.add(spaceGroup);
+  return { spaceGroup, galaxies: [g1, g2, g3] };
+}
+const spaceData = createSpaceAndGalaxies();
+
+// ГЛАВНАЯ ГРУППА КАТАЛИЗАТОРА (ДЛЯ 2-СЕКУНДНОГО ИНВЕРСИВНОГО ПОЯВЛЕНИЯ)
+const rootCatalyst = new THREE.Group();
+scene.add(rootCatalyst);
+
+// 3. СТАТИЧНАЯ БЕЛАЯ НАДПИСЬ SECUDEX ВВЕРХУ (МОНУМЕНТ ЭКСТЕНДЕД БЕЗ ФОНА)
+function createSecudexSign() {
+  const c = document.createElement('canvas');
+  c.width = 1024; c.height = 192;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, 1024, 192);
+  ctx.save();
+  ctx.translate(512, 108);
+  ctx.scale(1.42, 0.88); // Широкая пропорция Monument Extended
+  ctx.font = '900 72px "Arial Black", Impact, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(200, 180, 255, 0.65)';
+  ctx.shadowBlur = 18;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('S E C U D E X', 0, 0);
+  ctx.restore();
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.anisotropy = 4;
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(4.6, 0.86),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })
+  );
+  mesh.position.set(0, 3.35, -0.4);
+  rootCatalyst.add(mesh);
+  return mesh;
+}
+const secudexSign = createSecudexSign();
+
+// 4. ЮРИДИЧЕСКИЙ ДОГОВОР ВЫСОКОГО РАЗРЕШЕНИЯ (БЕЗ ЗАСВЕТА)
+function createContractMesh() {
+  const c = document.createElement('canvas');
+  c.width = 1536; c.height = 2172;
+  const ctx = c.getContext('2d');
+
+  // Плотная фактура гербовой бумаги
+  const grad = ctx.createLinearGradient(0, 0, 1536, 2172);
+  grad.addColorStop(0, '#f3efe6');
+  grad.addColorStop(0.5, '#eae4d7');
+  grad.addColorStop(1, '#dfd7c5');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 1536, 2172);
+
+  // Микро-волокна бумаги
+  for (let i = 0; i < 6000; i++) {
+    ctx.fillStyle = i % 2 === 0 ? 'rgba(90,80,65,0.035)' : 'rgba(255,255,255,0.12)';
+    ctx.fillRect(Math.random() * 1536, Math.random() * 2172, 3, 1);
+  }
+
+  // Двойная рамка
+  ctx.strokeStyle = '#1e293b';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(75, 75, 1386, 2022);
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(88, 88, 1360, 1996);
+
+  // Водяной знак
+  ctx.save();
+  ctx.translate(768, 1086);
+  ctx.rotate(-0.65);
+  ctx.font = 'bold 96px Georgia, serif';
+  ctx.fillStyle = 'rgba(30, 41, 59, 0.045)';
+  ctx.textAlign = 'center';
+  ctx.fillText('SECUDEX VERIFIED CONTRACT', 0, 0);
+  ctx.restore();
+
+  // Заголовок
+  ctx.fillStyle = '#0f172a';
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 46px "Times New Roman", Georgia, serif';
+  ctx.fillText('ДОГОВОР КВАНТОВОЙ ПЕРЕДАЧИ ПРАВ № 884-СД', 768, 195);
+  ctx.font = 'italic 28px "Times New Roman", Georgia, serif';
+  ctx.fillStyle = '#334155';
+  ctx.fillText('г. Владивосток • Цифровой реестр SECUDEX • 18 ноября 2026 г.', 768, 250);
+
+  // Текст пунктов договора
+  ctx.textAlign = 'left';
+  const lines = [
+    { b: true, t: '1. ПРЕДМЕТ СОГЛАШЕНИЯ И КРИПТОГРАФИЧЕСКИЙ КОНТУР' },
+    { b: false, t: '1.1. Правообладатель передает Оператору исключительные права на управление' },
+    { b: false, t: 'распределённым реестром активов в защищённом периметре катализатора.' },
+    { b: true, t: '1.2. СКРЫТАЯ ОГОВОРКА ОБ ОДНОСТОРОННЕМ ОТКАЗЕ:' },
+    { b: false, t: 'Оператор вправе без предварительного уведомления аннулировать токены доступа' },
+    { b: false, t: 'при фиксации аномалии в квантовом контуре верификации.' },
+    { b: true, t: '2. ОТВЕТСТВЕННОСТЬ И ГАРАНТИИ БЕЗОПАСНОСТИ' },
+    { b: true, t: '2.1. НЕОГРАНИЧЕННАЯ ОТВЕТСТВЕННОСТЬ БЕЗ ЛИМИТА:' },
+    { b: false, t: 'Сторона-1 принимает на себя безусловную имущественную ответственность' },
+    { b: false, t: 'в полном объёме убытков, включая упущенную выгоду и штрафные санкции.' },
+    { b: false, t: '2.2. Все транзакции, подтверждённые импульсом ядра, являются необратимыми.' },
+    { b: true, t: '3. АРБИТРАЖНАЯ ОГОВОРКА И ЮРИСДИКЦИЯ' },
+    { b: false, t: '3.1. Споры подлежат рассмотрению в закрытом цифровом арбитраже в течение' },
+    { b: false, t: '24 часов с момента формирования протокола квантового сканирования.' },
+    { b: false, t: '3.2. Настоящий экземпляр подписан усиленной квантовой подписью сторон.' }
+  ];
+
+  let y = 340;
+  for (const item of lines) {
+    ctx.font = item.b ? 'bold 28px "Times New Roman", Georgia, serif' : '27px "Times New Roman", Georgia, serif';
+    ctx.fillStyle = item.b ? '#090d16' : '#1e293b';
+    ctx.fillText(item.t, 130, y);
+    y += item.b ? 54 : 46;
+  }
+
+  // Подписи и гербовая синяя печать
+  ctx.strokeStyle = '#475569';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(130, 1680); ctx.lineTo(640, 1680);
+  ctx.moveTo(860, 1680); ctx.lineTo(1380, 1680);
+  ctx.stroke();
+
+  ctx.font = 'bold 26px "Times New Roman", serif';
+  ctx.fillStyle = '#0f172a';
+  ctx.fillText('ПРАВООБЛАДАТЕЛЬ: ____________ / А.В. Соколов /', 130, 1730);
+  ctx.fillText('ОПЕРАТОР: ___________________ / К.М. Волков /', 860, 1730);
+
+  // Синие рукописные подписи
+  ctx.strokeStyle = '#1d4ed8';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(390, 1670); ctx.bezierCurveTo(420, 1600, 460, 1710, 510, 1635);
+  ctx.moveTo(1060, 1672); ctx.bezierCurveTo(1100, 1595, 1140, 1705, 1210, 1640);
+  ctx.stroke();
+
+  // Круглая синяя печать
+  ctx.save();
+  ctx.translate(460, 1875);
+  ctx.strokeStyle = 'rgba(29, 78, 216, 0.85)';
+  ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.arc(0, 0, 125, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, 0, 112, 0, Math.PI * 2); ctx.stroke();
+  ctx.font = 'bold 22px Arial, sans-serif';
+  ctx.fillStyle = 'rgba(29, 78, 216, 0.88)';
+  ctx.textAlign = 'center';
+  ctx.fillText('SECUDEX • РЕЕСТР', 0, -10);
+  ctx.font = '18px Arial, sans-serif';
+  ctx.fillText('ОГРН 1262500094812', 0, 22);
+  ctx.restore();
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+  // MeshLambertMaterial гарантирует отсутствие бликов и пересвета на бумаге
+  const geo = new THREE.PlaneGeometry(2.25, 3.18, 24, 32);
+  const mat = new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(0, 0.1, 0);
+  rootCatalyst.add(mesh);
+
+  // Тонкая лазерная полоса сканирования на договоре
+  const scanLine = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.32, 0.045),
+    new THREE.MeshBasicMaterial({ color: 0xff2a55, transparent: true, opacity: 0, side: THREE.DoubleSide })
+  );
+  scanLine.position.z = 0.025;
+  mesh.add(scanLine);
+
+  return { mesh, scanLine };
+}
+const contract = createContractMesh();
+
+// 5. ОБЪЕМНЫЙ СТЕКЛЯННЫЙ КУБ С ТЕМНО-ФИОЛЕТОВЫМИ РЕЛЬЕФНЫМИ РЕБРАМИ
+const cubeSize = 4.3;
+const half = cubeSize / 2;
+const cubeGroup = new THREE.Group();
+cubeGroup.position.y = 0.1;
+rootCatalyst.add(cubeGroup);
+
+const darkPurpleBeamMat = new THREE.MeshStandardMaterial({
+  color: 0x260c47,
+  roughness: 0.28,
+  metalness: 0.88,
+  bumpMap: metalTex,
+  bumpScale: 0.015,
+  roughnessMap: metalTex
+});
+const violetAccentMat = new THREE.MeshStandardMaterial({
+  color: 0x6d28d9,
+  emissive: 0x3b0764,
+  emissiveIntensity: 0.65,
+  roughness: 0.2,
+  metalness: 0.9
+});
+
+// 12 объемных ребер с двойным профилем и угловыми замками
+const dirs = [
+  // 4 вертикальных
+  { p: [-half, 0, -half], r: [0, 0, 0] }, { p: [half, 0, -half], r: [0, 0, 0] },
+  { p: [-half, 0, half], r: [0, 0, 0] },  { p: [half, 0, half], r: [0, 0, 0] },
+  // 4 по X
+  { p: [0, -half, -half], r: [0, 0, Math.PI / 2] }, { p: [0, half, -half], r: [0, 0, Math.PI / 2] },
+  { p: [0, -half, half], r: [0, 0, Math.PI / 2] },  { p: [0, half, half], r: [0, 0, Math.PI / 2] },
+  // 4 по Z
+  { p: [-half, -half, 0], r: [Math.PI / 2, 0, 0] }, { p: [half, -half, 0], r: [Math.PI / 2, 0, 0] },
+  { p: [-half, half, 0], r: [Math.PI / 2, 0, 0] },  { p: [half, half, 0], r: [Math.PI / 2, 0, 0] }
+];
+
+dirs.forEach(d => {
+  const beamGroup = new THREE.Group();
+  const mainBar = new THREE.Mesh(new THREE.BoxGeometry(0.16, cubeSize, 0.16), darkPurpleBeamMat);
+  const innerStrip = new THREE.Mesh(new THREE.BoxGeometry(0.05, cubeSize - 0.1, 0.175), violetAccentMat);
+  const sideStrip = new THREE.Mesh(new THREE.BoxGeometry(0.175, cubeSize - 0.1, 0.05), violetAccentMat);
+  beamGroup.add(mainBar, innerStrip, sideStrip);
+  beamGroup.position.set(...d.p);
+  beamGroup.rotation.set(...d.r);
+  cubeGroup.add(beamGroup);
+});
+
+// 8 угловых узлов-фиксаторов
+const lowerCorners = [];
+for (let x of [-half, half]) {
+  for (let y of [-half, half]) {
+    for (let z of [-half, half]) {
+      const node = new THREE.Group();
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.28), darkPurpleBeamMat);
+      const ring = new THREE.Mesh(new THREE.OctahedronGeometry(0.21, 0), violetAccentMat);
+      node.add(cap, ring);
+      node.position.set(x, y, z);
+      cubeGroup.add(node);
+      if (y < 0) lowerCorners.push(new THREE.Vector3(x, y + 0.1, z));
+    }
+  }
+}
+
+// Полупрозрачные стеклянные грани куба с эффектом Френеля по краям
+const glassMat = new THREE.MeshPhysicalMaterial({
+  color: 0xd8b4fe,
+  transparent: true,
+  opacity: 0.11,
+  roughness: 0.08,
+  metalness: 0.05,
+  reflectivity: 0.9,
+  clearcoat: 1.0,
+  clearcoatRoughness: 0.06,
+  depthWrite: false,
+  side: THREE.DoubleSide
+});
+const glassBox = new THREE.Mesh(new THREE.BoxGeometry(cubeSize - 0.06, cubeSize - 0.06, cubeSize - 0.06), glassMat);
+cubeGroup.add(glassBox);
+
+// Тонкая подсветка стеклянных кромок
+const glassEdges = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(cubeSize - 0.08, cubeSize - 0.08, cubeSize - 0.08)),
+  new THREE.LineBasicMaterial({ color: 0x9333ea, transparent: true, opacity: 0.45 })
+);
+cubeGroup.add(glassEdges);
+
+// 6. ТРИ ДЕТАЛИЗИРОВАННЫХ ФИОЛЕТОВО-СЕРЕБРЯНЫХ КВАНТОВЫХ КОМПЬЮТЕРА И БЕЛЫЕ ПРОвода
+const silverMat = new THREE.MeshStandardMaterial({
+  color: 0xd8dee9, metalness: 0.92, roughness: 0.22, bumpMap: metalTex, bumpScale: 0.01, roughnessMap: metalTex
+});
+const purpleChassisMat = new THREE.MeshStandardMaterial({
+  color: 0x3b136b, metalness: 0.85, roughness: 0.26, bumpMap: metalTex, bumpScale: 0.012
+});
+const cableMat = new THREE.MeshStandardMaterial({
+  color: 0xf1f5f9, roughness: 0.35, metalness: 0.15
+});
+
+// Выбираем 3 нижних внешних угла: левый передний, правый передний, задний левый
+const selectedCorners = [
+  new THREE.Vector3(-half, -half + 0.1, half),
+  new THREE.Vector3(half, -half + 0.1, half),
+  new THREE.Vector3(-half, -half + 0.1, -half)
+];
+const compPositions = [
+  new THREE.Vector3(-4.1, -3.55, 2.3),
+  new THREE.Vector3(4.1, -3.55, 2.3),
+  new THREE.Vector3(-3.6, -3.65, -2.5)
+];
+
+const quantumSystems = [];
+
+function buildQuantumComputer(pos) {
+  const qc = new THREE.Group();
+  qc.position.copy(pos);
+
+  // Верхний шестигранный крио-корпус со ступенчатыми фасками
+  const topCap = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.78, 0.26, 6), purpleChassisMat);
+  topCap.position.y = 0.65;
+  const silverCollar = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.72, 0.08, 24), silverMat);
+  silverCollar.position.y = 0.5;
+  qc.add(topCap, silverCollar);
+
+  // Каскад серебряных и фиолетовых охлаждающих дисков + вертикальные капилляры
+  const tiers = [0.32, 0.08, -0.16, -0.38];
+  const radii = [0.56, 0.46, 0.36, 0.26];
+  tiers.forEach((ty, idx) => {
+    const plate = new THREE.Mesh(new THREE.CylinderGeometry(radii[idx], radii[idx], 0.055, 24), idx % 2 === 0 ? silverMat : purpleChassisMat);
+    plate.position.y = ty;
+    qc.add(plate);
+
+    // 6 серебряных стоек-капилляров между дисками
+    for (let k = 0; k < 6; k++) {
+      const a = (k / 6) * Math.PI * 2;
+      const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.24, 8), silverMat);
+      rod.position.set(Math.cos(a) * (radii[idx] * 0.78), ty + 0.11, Math.sin(a) * (radii[idx] * 0.78));
+      qc.add(rod);
+    }
+  });
+
+  // Центральный квантовый чип-резонатор внизу
+  const coreLight = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.16, 1),
+    new THREE.MeshBasicMaterial({ color: 0xc084fc })
+  );
+  coreLight.position.y = -0.56;
+  qc.add(coreLight);
+
+  // Нижнее опорное кольцо
+  const baseRing = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.035, 12, 24), silverMat);
+  baseRing.rotation.x = Math.PI / 2;
+  baseRing.position.y = -0.62;
+  qc.add(baseRing);
+
+  rootCatalyst.add(qc);
+  return { group: qc, coreLight, topSocket: new THREE.Vector3(pos.x, pos.y + 0.78, pos.z) };
+}
+
+selectedCorners.forEach((cornerPos, i) => {
+  const qc = buildQuantumComputer(compPositions[i]);
+  const start = qc.topSocket;
+  const end = cornerPos;
+  const mid1 = new THREE.Vector3().lerpVectors(start, end, 0.33);
+  mid1.y -= 0.75; // Провисание кабеля
+  const mid2 = new THREE.Vector3().lerpVectors(start, end, 0.68);
+  mid2.y -= 0.45;
+
+  const curve = new THREE.CatmullRomCurve3([start, mid1, mid2, end]);
+  const cableGeo = new THREE.TubeGeometry(curve, 36, 0.042, 10, false);
+  const cableMesh = new THREE.Mesh(cableGeo, cableMat);
+  rootCatalyst.add(cableMesh);
+
+  // Светящийся импульс, бегущий по проводу
+  const pulseSphere = new THREE.Mesh(
+    new THREE.SphereGeometry(0.095, 12, 12),
+    new THREE.MeshBasicMaterial({ color: 0xe879f9 })
+  );
+  pulseSphere.visible = false;
+  rootCatalyst.add(pulseSphere);
+
+  quantumSystems.push({ qc, curve, pulseSphere, cornerPos });
+});
+
+// 7. ЭКРАН ПРОЕКЦИИ ОШИБКИ НА ПЕРЕДНЕМ СТЕКЛЕ И СФЕРОИД ИЗ БУКВ
+const glassScreen = new THREE.Mesh(
+  new THREE.PlaneGeometry(3.4, 1.35),
+  new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.FrontSide })
+);
+// Располагаем прямо перед передним стеклом куба, повернутым к камере (НЕ зеркально)
+glassScreen.position.set(0, -0.35, half + 0.04);
+cubeGroup.add(glassScreen);
+
+function renderErrorToGlass(code, title) {
+  const c = document.createElement('canvas');
+  c.width = 1024; c.height = 400;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, 1024, 400);
+
+  // Полупрозрачная голографическая плашка на стекле
+  ctx.fillStyle = 'rgba(35, 6, 16, 0.72)';
+  ctx.strokeStyle = '#ff3b5c';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.roundRect(24, 24, 976, 352, 24);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#ff3b5c';
+  ctx.font = '900 34px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(`ОБНАРУЖЕН РИСК • ${code}`, 512, 95);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 32px Arial, sans-serif';
+  const words = title.split(' ');
+  let line = '', y = 175;
+  for (const w of words) {
+    if ((line + w).length > 34) {
+      ctx.fillText(line.trim(), 512, y);
+      line = w + ' '; y += 48;
+    } else {
+      line += w + ' ';
+    }
+  }
+  ctx.fillText(line.trim(), 512, y);
+
+  if (glassScreen.material.map) glassScreen.material.map.dispose();
+  glassScreen.material.map = new THREE.CanvasTexture(c);
+  glassScreen.material.opacity = 1;
+  glassScreen.material.needsUpdate = true;
+}
+
+// Свернутый сфероид с пульсирующими буквами, летящий вверх после 2 секунд на стекле
+const spheroidGroup = new THREE.Group();
+spheroidGroup.visible = false;
+rootCatalyst.add(spheroidGroup);
+
+const charSprites = [];
+const chars = 'РИСК01X!#§';
+for (let i = 0; i < 42; i++) {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 64;
+  const ctx = c.getContext('2d');
+  ctx.font = '900 44px Arial, sans-serif';
+  ctx.fillStyle = i % 3 === 0 ? '#ffffff' : '#ff3b5c';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(chars[i % chars.length], 32, 32);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true }));
+  const phi = Math.acos(-1 + (2 * i) / 42);
+  const theta = Math.sqrt(42 * Math.PI) * phi;
+  sp.userData.baseDir = new THREE.Vector3(Math.cos(theta) * Math.sin(phi), Math.sin(theta) * Math.sin(phi), Math.cos(phi));
+  sp.scale.setScalar(0.24);
+  spheroidGroup.add(sp);
+  charSprites.push(sp);
+}
+
+// 8. ОРБИТАЛЬНЫЙ РОЙ КРАСНЫХ МИКРО-ИСКР («ВОРОНЫ» НАД ПЕРВОЙ ОШИБКОЙ ВВЕРХУ)
+const swarmGroup = new THREE.Group();
+swarmGroup.position.set(0, 2.75, 0.8);
+swarmGroup.visible = false;
+rootCatalyst.add(swarmGroup);
+
+const swarmCore = new THREE.Mesh(
+  new THREE.SphereGeometry(0.16, 16, 16),
+  new THREE.MeshBasicMaterial({ color: 0xff2a55, transparent: true, opacity: 0.85 })
+);
+swarmGroup.add(swarmCore);
+
+const swarmParticles = [];
+const sparkTexCanvas = document.createElement('canvas');
+sparkTexCanvas.width = 32; sparkTexCanvas.height = 32;
+const sCtx = sparkTexCanvas.getContext('2d');
+const sGrad = sCtx.createRadialGradient(16, 16, 0, 16, 16, 16);
+sGrad.addColorStop(0, 'rgba(255,255,255,1)');
+sGrad.addColorStop(0.35, 'rgba(255,50,80,0.9)');
+sGrad.addColorStop(1, 'rgba(255,0,30,0)');
+sCtx.fillStyle = sGrad; sCtx.fillRect(0, 0, 32, 32);
+const sparkTex = new THREE.CanvasTexture(sparkTexCanvas);
+
+for (let i = 0; i < 65; i++) {
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: sparkTex, color: i % 4 === 0 ? 0xff99aa : 0xff2a55, transparent: true, blending: THREE.AdditiveBlending
+  }));
+  const radius = 0.42 + Math.random() * 0.78;
+  const speed = (1.6 + Math.random() * 1.8) * (Math.random() > 0.3 ? 1 : -1);
+  const angle = Math.random() * Math.PI * 2;
+  const yOff = (Math.random() - 0.5) * 0.32;
+  const scale = 0.1 + Math.random() * 0.14;
+  sp.scale.setScalar(scale);
+  sp.userData = { radius, speed, angle, yOff, wobble: Math.random() * 6 };
+  swarmGroup.add(sp);
+  swarmParticles.push(sp);
+}
+
+// 9. МОЛНИИ, ПРОНИЗЫВАЮЩИЕ ДОГОВОР
+const lightningBolts = [];
+function spawnBolt(start, end) {
+  const pts = [start.clone()];
+  const steps = 10;
+  for (let i = 1; i < steps; i++) {
+    const p = new THREE.Vector3().lerpVectors(start, end, i / steps);
+    p.x += (Math.random() - 0.5) * 0.42;
+    p.y += (Math.random() - 0.5) * 0.42;
+    p.z += (Math.random() - 0.5) * 0.42;
+    pts.push(p);
+  }
+  pts.push(end.clone());
+  const curve = new THREE.CatmullRomCurve3(pts);
+  const mesh = new THREE.Mesh(
+    new THREE.TubeGeometry(curve, 20, 0.018, 6, false),
+    new THREE.MeshBasicMaterial({ color: 0xf5d0fe, transparent: true, opacity: 1 })
+  );
+  rootCatalyst.add(mesh);
+  lightningBolts.push({ mesh, life: 1.0 });
+}
+
+// СПИСОК ЮРИДИЧЕСКИХ РИСКОВ
+const RISKS_DB = [
+  { code: 'ПУНКТ 1.2', text: 'СКРЫТАЯ ОГОВОРКА ОБ ОДНОСТОРОННЕМ ОТКАЗЕ' },
+  { code: 'ПУНКТ 2.1', text: 'НЕОГРАНИЧЕННАЯ ОТВЕТСТВЕННОСТЬ БЕЗ ЛИМИТА' },
+  { code: 'ПУНКТ 3.1', text: 'ЗАКРЫТЫЙ АРБИТРАЖ С УСКОРЕННЫМ СРОКОМ 24 ЧАСА' },
+  { code: 'ПУНКТ 2.2', text: 'НЕОБРАТИМОСТЬ ТРАНЗАКЦИЙ БЕЗ ПРАВА ОСПАРИВАНИЯ' }
+];
+
+let threatsFound = 0;
+let scanState = { active: false, phase: 'idle', timer: 0, hitPoint: new THREE.Vector3() };
+
+const riskListEl = document.getElementById('risk-list');
+const threatCountEl = document.getElementById('threat-count');
+const riskHintEl = document.getElementById('risk-hint');
+
+function triggerScan(hitPoint) {
+  if (scanState.active) return;
+  scanState = { active: true, phase: 'pulse', timer: 0, hitPoint: hitPoint.clone() };
+  quantumSystems.forEach(q => { q.pulseSphere.visible = true; });
+}
+
+function finalizeRisk() {
+  const item = RISKS_DB[threatsFound % RISKS_DB.length];
+  threatsFound++;
+  threatCountEl.textContent = `УГРОЗ: ${threatsFound}`;
+  riskHintEl.style.display = 'none';
+
+  const div = document.createElement('div');
+  div.className = 'risk-item';
+  div.innerHTML = `<b>#${threatsFound} &bull; ${item.code}:</b> ${item.text}`;
+  riskListEl.prepend(div);
+
+  // Активируем рой красных частиц-«воронов» вокруг первой ошибки вверху
+  swarmGroup.visible = true;
+}
+
+// Кнопка ОЧИСТИТЬ
+document.getElementById('clear-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  threatsFound = 0;
+  threatCountEl.textContent = 'УГРОЗ: 0';
+  riskListEl.innerHTML = '';
+  riskHintEl.style.display = 'block';
+  swarmGroup.visible = false;
+  glassScreen.material.opacity = 0;
+  spheroidGroup.visible = false;
+  scanState.active = false;
+});
+
+// Обработка клика/тапа по договору (отличаем тап от вращения камеры)
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+let downPos = { x: 0, y: 0, time: 0 };
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  downPos = { x: e.clientX, y: e.clientY, time: performance.now() };
+});
+
+renderer.domElement.addEventListener('pointerup', (e) => {
+  const dist = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
+  const dt = performance.now() - downPos.time;
+  if (dist < 14 && dt < 450) {
+    pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+    pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    const hits = raycaster.intersectObject(contract.mesh);
+    if (hits.length > 0) {
+      triggerScan(hits[0].point);
+    }
+  }
+});
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// 10. ГЛАВНЫЙ ЦИКЛ АНИМАЦИИ + ПЛАВНОЕ ИНВЕРСИВНОЕ ПОЯВЛЕНИЕ ЗА 2.0 СЕКУНДЫ
+const clock = new THREE.Clock();
+let introElapsed = 0;
+const INTRO_DURATION = 2.0;
+
+// Начальное состояние перед обратным засасыванием
+rootCatalyst.scale.setScalar(0.001);
+rootCatalyst.rotation.y = -Math.PI * 0.75;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.getElapsedTime();
+
+  // Плавное инверсивное появление (2.0 сек)
+  if (introElapsed < INTRO_DURATION) {
+    introElapsed = Math.min(introElapsed + dt, INTRO_DURATION);
+    const p = introElapsed / INTRO_DURATION;
+    // Плавная кривая easeOutQuint
+    const ease = 1 - Math.pow(1 - p, 5);
+    rootCatalyst.scale.setScalar(0.001 + 0.999 * ease);
+    rootCatalyst.rotation.y = -Math.PI * 0.75 * (1 - ease);
+  }
+
+  // Вращение галактик и живая левитация договора
+  spaceData.galaxies.forEach((g, idx) => { g.rotation.y += dt * (0.04 + idx * 0.015); });
+  contract.mesh.position.y = 0.1 + Math.sin(t * 1.5) * 0.07;
+  contract.mesh.rotation.y = Math.sin(t * 0.8) * 0.06;
+
+  // Легкая пульсация квантовых чипов
+  quantumSystems.forEach((q, idx) => {
+    q.qc.coreLight.rotation.y += dt * 1.8;
+    q.qc.coreLight.scale.setScalar(0.9 + Math.sin(t * 4 + idx) * 0.15);
+  });
+
+  // Логика этапов сканирования при клике
+  if (scanState.active) {
+    scanState.timer += dt;
+
+    if (scanState.phase === 'pulse') {
+      // 0..0.55с: Импульсы бегут по белым кабелям от квантовых компьютеров в куб
+      const p = Math.min(scanState.timer / 0.55, 1);
+      quantumSystems.forEach(q => {
+        const pt = q.curve.getPoint(p);
+        q.pulseSphere.position.copy(pt);
+      });
+      if (p >= 1) {
+        quantumSystems.forEach(q => {
+          q.pulseSphere.visible = false;
+          spawnBolt(q.cornerPos, scanState.hitPoint);
+        });
+        flashLight.position.copy(scanState.hitPoint);
+        flashLight.intensity = 9;
+        scanState.phase = 'scan';
+        scanState.timer = 0;
+        contract.scanLine.material.opacity = 0.95;
+      }
+    } else if (scanState.phase === 'scan') {
+      // 0..0.75с: Красный сканер проходит по договору, бьют молнии
+      const p = Math.min(scanState.timer / 0.75, 1);
+      contract.scanLine.position.y = 1.55 - p * 3.1;
+      if (Math.random() < 0.25) {
+        const q = quantumSystems[Math.floor(Math.random() * quantumSystems.length)];
+        spawnBolt(q.cornerPos, new THREE.Vector3((Math.random() - 0.5) * 1.4, contract.scanLine.position.y, 0.05));
+      }
+      if (p >= 1) {
+        contract.scanLine.material.opacity = 0;
+        const nextRisk = RISKS_DB[threatsFound % RISKS_DB.length];
+        renderErrorToGlass(nextRisk.code, nextRisk.text);
+        scanState.phase = 'glass';
+        scanState.timer = 0;
+      }
+    } else if (scanState.phase === 'glass') {
+      // 2.0 секунды надпись держится прямо на переднем стекле куба
+      if (scanState.timer >= 2.0) {
+        glassScreen.material.opacity = 0;
+        spheroidGroup.visible = true;
+        spheroidGroup.position.set(0, -0.2, half + 0.1);
+        scanState.phase = 'spheroid';
+        scanState.timer = 0;
+      }
+    } else if (scanState.phase === 'spheroid') {
+      // 0..1.1с: Свернутый сфероид с пульсирующими буквами летит вверх в зону РИСК
+      const p = Math.min(scanState.timer / 1.1, 1);
+      const ease = p * p * (3 - 2 * p);
+      spheroidGroup.position.lerpVectors(new THREE.Vector3(0, -0.2, half + 0.1), new THREE.Vector3(0, 2.75, 0.8), ease);
+      spheroidGroup.rotation.y += dt * 5;
+      spheroidGroup.rotation.x += dt * 3;
+      charSprites.forEach((sp, i) => {
+        const r = 0.42 + Math.sin(t * 14 + i) * 0.09;
+        sp.position.copy(sp.userData.baseDir).multiplyScalar(r);
+      });
+      if (p >= 1) {
+        spheroidGroup.visible = false;
+        scanState.active = false;
+        scanState.phase = 'idle';
+        finalizeRisk();
+      }
+    }
+  }
+
+  // Анимация орбитального роя красных микро-искр («вороны» над первой ошибкой)
+  if (swarmGroup.visible) {
+    swarmCore.scale.setScalar(0.85 + Math.sin(t * 7) * 0.2);
+    swarmParticles.forEach(sp => {
+      sp.userData.angle += sp.userData.speed * dt;
+      const r = sp.userData.radius + Math.sin(t * 3 + sp.userData.wobble) * 0.08;
+      sp.position.set(
+        Math.cos(sp.userData.angle) * r,
+        sp.userData.yOff + Math.sin(t * 4.5 + sp.userData.wobble) * 0.07,
+        Math.sin(sp.userData.angle) * r
+      );
+    });
+  }
+
+  // Затухание молний и вспышки
+  flashLight.intensity *= 0.85;
+  for (let i = lightningBolts.length - 1; i >= 0; i--) {
+    lightningBolts[i].life -= dt * 3.5;
+    if (lightningBolts[i].life <= 0) {
+      rootCatalyst.remove(lightningBolts[i].mesh);
+      lightningBolts[i].mesh.geometry.dispose();
+      lightningBolts[i].mesh.material.dispose();
+      lightningBolts.splice(i, 1);
+    } else {
+      lightningBolts[i].mesh.material.opacity = lightningBolts[i].life;
+    }
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+</body>
+</html>
