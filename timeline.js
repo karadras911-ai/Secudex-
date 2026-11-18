@@ -14,7 +14,7 @@ export const STAGES = {
 };
 
 export const STAGE_DURATIONS = {
-  intro: 3.6,
+  intro: 6.2,
   transfer: 3.4,
   analysis: 3.6,
   verdict: 2.2,
