@@ -120,3 +120,64 @@ export function getSlideGroup(stage) {
   if (stage === STAGES.TRANSFER) return 'slide-2';
   return 'slide-3';
 }
+
+export function shouldPlayStartupIntro(hasPlayedStartupIntro, stage) {
+  return !hasPlayedStartupIntro && stage === STAGES.INTRO;
+}
+
+export function computeDataStreamPoint(
+  radius,
+  baseTheta,
+  basePhi,
+  baseScale,
+  streamPhase,
+  index,
+  out = { x: 0, y: 0, z: 0 },
+) {
+  const layer = index % 3;
+  const dir = layer === 1 ? -1 : 1;
+  const azSpeed = (0.55 + layer * 0.32) * dir;
+  const phase = index * 0.47;
+  const phi = basePhi + streamPhase * azSpeed + Math.sin(streamPhase * 0.85 + phase) * 0.24;
+  const thetaRaw = baseTheta + Math.sin(streamPhase * (1.2 + layer * 0.28) + phase) * 0.16;
+  const theta = Math.min(Math.PI - 0.24, Math.max(0.24, thetaRaw));
+  const rPulse = 1 + Math.sin(streamPhase * 2.2 + phase * 1.4) * 0.055;
+  const dr = radius * baseScale * rPulse;
+  const sinT = Math.sin(theta);
+
+  out.x = dr * sinT * Math.cos(phi);
+  out.y = dr * Math.cos(theta);
+  out.z = dr * sinT * Math.sin(phi);
+  return out;
+}
+
+export function computeCinemaOptics(stage, camDistance, isWarpActive = false, out = {
+  focus: 16.5,
+  aperture: 0.00011,
+  bloomStrength: 0.38,
+  chromaAmount: 0.00045,
+}) {
+  const safeDist = Number.isFinite(camDistance) ? camDistance : 16.5;
+  out.focus = Math.min(80, Math.max(3.5, safeDist));
+
+  if (stage === STAGES.COLLAPSE || stage === STAGES.LOGO_REVEAL) {
+    out.aperture = 0;
+  } else if (stage === STAGES.WINDOW_FOCUS) {
+    out.aperture = 0.00018;
+  } else {
+    out.aperture = 0.00011;
+  }
+
+  if (stage === STAGES.POWERDOWN) {
+    out.bloomStrength = 0.16;
+  } else if (stage === STAGES.ANALYSIS || stage === STAGES.VERDICT || stage === STAGES.BEAM_ASCENT) {
+    out.bloomStrength = 0.54;
+  } else if (stage === STAGES.SCAN || stage === STAGES.TRANSFER) {
+    out.bloomStrength = 0.44;
+  } else {
+    out.bloomStrength = 0.36;
+  }
+
+  out.chromaAmount = isWarpActive ? 0.0022 : 0.00045;
+  return out;
+}
