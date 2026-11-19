@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "node server.js",
-    "build": "node --check server.js && node --check timeline.js",
+    "build": "node --check server.js && node --check timeline.js && find src -name '*.js' -exec node --check {} +",
     "start": "node server.js",
-    "lint": "node --check server.js && node --check timeline.js"
+    "lint": "node --check server.js && node --check timeline.js && find src -name '*.js' -exec node --check {} +"
   },
   "dependencies": {
     "express": "^4.21.2"

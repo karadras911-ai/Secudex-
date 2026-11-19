@@ -10,7 +10,7 @@ const PORT = 3000;
 const HOST = '0.0.0.0';
 
 app.use((req, res, next) => {
-  if (req.path === '/' || req.path.endsWith('.html') || req.path.endsWith('.js')) {
+  if (req.path === '/' || req.path.endsWith('.html') || req.path.endsWith('.js') || req.path.endsWith('.css')) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   }
   next();
