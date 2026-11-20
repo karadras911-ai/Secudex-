@@ -97,7 +97,7 @@ export function createHudController({ state, onEnterStage, voicePlayer }) {
       if (p >= 0.64) pullP = (p - 0.64) / 0.36;
     }
     const tel = getStorageTelemetry(stored, pullP);
-    telemetryBadgeEl.textContent = `УГРОЗ: ${state.threatsExtracted}/${CONTRACT_PAGES.length} • БАТ: ${tel.chargePct}%`;
+    telemetryBadgeEl.textContent = `УГРОЗ: ${state.threatsExtracted}/${CONTRACT_PAGES.length} • АНАЛИЗ: ${tel.chargePct}%`;
     lastBadgePct = tel.chargePct;
     lastBadgeThreats = state.threatsExtracted;
 
@@ -138,15 +138,15 @@ export function createHudController({ state, onEnterStage, voicePlayer }) {
       [STAGES.ANALYSIS]: 'finale',
       [STAGES.BEAM_ASCENT]: 'finale',
     };
-    onEnterStage(targetStage, audioMap[targetStage] || null);
+    onEnterStage(targetStage, audioMap[targetStage] || null, { smoothSlide: true });
   });
 
   primaryBtn.addEventListener('click', () => {
     const act = getNextUserAction(state.stage);
     if (!act) return;
-    if (act.action === 'start_scan') onEnterStage(STAGES.CONTRACT_DROP, 'scan');
-    else if (act.action === 'start_transfer') onEnterStage(STAGES.TRANSFER, 'transfer');
-    else if (act.action === 'restart') onEnterStage(STAGES.INTRO, 'intro');
+    if (act.action === 'start_scan') onEnterStage(STAGES.CONTRACT_DROP, 'scan', { smoothSlide: true });
+    else if (act.action === 'start_transfer') onEnterStage(STAGES.TRANSFER, 'transfer', { smoothSlide: true });
+    else if (act.action === 'restart') onEnterStage(STAGES.INTRO, 'intro', { smoothSlide: true });
   });
 
   pauseBtn.addEventListener('click', () => {
@@ -157,21 +157,21 @@ export function createHudController({ state, onEnterStage, voicePlayer }) {
 
   document.getElementById('reset-btn').addEventListener('click', () => {
     selectedStepId = null;
-    onEnterStage(STAGES.INTRO, 'intro');
+    onEnterStage(STAGES.INTRO, 'intro', { smoothSlide: true });
   });
 
   document.getElementById('final-replay-btn').addEventListener('click', () => {
     selectedStepId = null;
-    onEnterStage(STAGES.INTRO, 'intro');
+    onEnterStage(STAGES.INTRO, 'intro', { smoothSlide: true });
   });
 
   document.querySelectorAll('.slide-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const idx = Number(btn.getAttribute('data-slide'));
-      if (idx === 0) onEnterStage(STAGES.INTRO, 'intro');
-      else if (idx === 1) onEnterStage(STAGES.CONTRACT_DROP, 'scan');
-      else if (idx === 2) onEnterStage(STAGES.TRANSFER, 'transfer');
-      else if (idx === 3) onEnterStage(STAGES.ANALYSIS, 'finale');
+      if (idx === 0) onEnterStage(STAGES.INTRO, 'intro', { smoothSlide: true });
+      else if (idx === 1) onEnterStage(STAGES.CONTRACT_DROP, 'scan', { smoothSlide: true });
+      else if (idx === 2) onEnterStage(STAGES.TRANSFER, 'transfer', { smoothSlide: true });
+      else if (idx === 3) onEnterStage(STAGES.ANALYSIS, 'finale', { smoothSlide: true });
     });
   });
 
@@ -202,7 +202,7 @@ export function createHudController({ state, onEnterStage, voicePlayer }) {
     if (telemetry.chargePct === lastBadgePct && state.threatsExtracted === lastBadgeThreats) return;
     lastBadgePct = telemetry.chargePct;
     lastBadgeThreats = state.threatsExtracted;
-    telemetryBadgeEl.textContent = `УГРОЗ: ${state.threatsExtracted}/${CONTRACT_PAGES.length} • БАТ: ${telemetry.chargePct}%`;
+    telemetryBadgeEl.textContent = `УГРОЗ: ${state.threatsExtracted}/${CONTRACT_PAGES.length} • АНАЛИЗ: ${telemetry.chargePct}%`;
   }
 
   return {

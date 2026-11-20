@@ -282,7 +282,7 @@ export function getStorageTelemetry(pagesStored, pullProgress = 0, pages = CONTR
     indexCoeff,
     riskCoeff,
     flowMbps,
-    statusLabel: chargePct >= 100 ? 'ЗАРЯД 100% // ГОТОВ' : (fractional > 0.02 ? 'АРХИВАЦИЯ...' : (baseStored > 0 ? 'БУФЕР АКТИВЕН' : 'ОЖИДАНИЕ')),
+    statusLabel: chargePct >= 100 ? 'АНАЛИЗ 100% // ГОТОВ' : (fractional > 0.02 ? 'СКАН И ОЦЕНКА...' : (baseStored > 0 ? 'БУФЕР АНАЛИЗА' : 'ОЖИДАНИЕ')),
   };
 }
 
@@ -300,9 +300,9 @@ export function getRulerStepStates(currentStage, pageIndex = 0, threatsExtracted
       const pct = Math.round((Math.min(pages.length, threatsExtracted) / pages.length) * 100);
       if (status === 'active') {
         const cur = pages[Math.min(pages.length - 1, pageIndex)];
-        detailLines.push(`Сейчас: лист ${Math.min(pages.length, pageIndex + 1)}/${pages.length} (${cur.riskCode} — ${cur.severity}). Накопитель: ${pct}%.`);
+        detailLines.push(`Сейчас: лист ${Math.min(pages.length, pageIndex + 1)}/${pages.length} (${cur.riskCode} — ${cur.severity}). Шкала анализа: ${pct}%.`);
       } else if (status === 'done') {
-        detailLines.push(`Выполнено: извлечено ${pages.length}/${pages.length} рисков поставки, накопитель заполнен на 100%.`);
+        detailLines.push(`Выполнено: извлечено ${pages.length}/${pages.length} рисков поставки, шкала анализа заполнена на 100%.`);
       }
       if (threatsExtracted > 0) {
         const found = pages.slice(0, threatsExtracted).map(p => `${p.riskCode}: ${p.riskText}`);

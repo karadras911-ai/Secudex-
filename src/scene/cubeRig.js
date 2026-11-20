@@ -355,7 +355,8 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
   const portalSlot = new THREE.Mesh(new THREE.PlaneGeometry(3.12, 3.12), portalGlowMat);
   portalSlot.position.z = 0.08;
   backWallGroup.add(portalSlot);
-  backWallGroup.add(createRearTunnel(cyberArmorMat));
+  const rearTunnel = createRearTunnel(cyberArmorMat, maxAnisotropy);
+  backWallGroup.add(rearTunnel.rearTunnelGroup);
   cubeGroup.add(backWallGroup);
 
   function buildFaceElectrodeAssembly(hasCenterEmitter) {
@@ -470,16 +471,18 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
   const vaultBody = new THREE.Mesh(new THREE.BoxGeometry(1.18, 3.36, 1.54), cubeReactorArmorMat);
   const vaultCapTop = new THREE.Mesh(new THREE.BoxGeometry(1.26, 0.18, 1.62), cyberChromeMat);
   vaultCapTop.position.y = 1.72;
-  // Полюсная «клемма» батареи сверху корпуса
-  const batteryTerminal = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.14, 0.68), electrodeGlowMat);
-  batteryTerminal.position.y = 1.85;
+  // Диагностический маяк-гребень блока анализа и рисков сверху корпуса
+  const diagCap = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.10, 0.96), cyberArmorMat);
+  diagCap.position.y = 1.84;
+  const diagVisor = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.045, 0.98), electrodeGlowMat);
+  diagVisor.position.y = 1.87;
   const vaultCapBot = new THREE.Mesh(new THREE.BoxGeometry(1.26, 0.18, 1.62), cyberChromeMat);
   vaultCapBot.position.y = -1.72;
   const vaultEdgeFrame = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.BoxGeometry(1.22, 3.40, 1.58)),
     new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.58 })
   );
-  leftStorageGroup.add(vaultBody, vaultCapTop, batteryTerminal, vaultCapBot, vaultEdgeFrame);
+  leftStorageGroup.add(vaultBody, vaultCapTop, diagCap, diagVisor, vaultCapBot, vaultEdgeFrame);
 
   [-0.85, 0.85].forEach(cy => {
     const conduit = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.56, 12), cyberChromeMat);
@@ -548,22 +551,20 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
     storageCtx.strokeRect(8, 8, w - 16, h - 16);
 
     storageCtx.fillStyle = '#7dd3fc';
-    storageCtx.font = '800 28px "Segoe UI", Arial, sans-serif';
+    storageCtx.font = '800 26px "Segoe UI", Arial, sans-serif';
     storageCtx.textAlign = 'left';
-    storageCtx.fillText('НАКОПИТЕЛЬ • БАТАРЕЯ', 22, 48);
+    storageCtx.fillText('ШКАЛА АНАЛИЗА И РИСКОВ', 22, 48);
 
-    // Крупные проценты заполнения
+    // Крупные проценты прогресса анализа договора
     storageCtx.fillStyle = pct >= 80 ? '#fda4af' : '#e0f2fe';
     storageCtx.font = '900 84px Arial, sans-serif';
     storageCtx.fillText(`${pct}%`, 22, 136);
 
-    // Иконка батарейной шкалы справа от процентов
-    const bx = 250, by = 72, bw = 224, bh = 64;
-    storageCtx.strokeStyle = '#94a3b8';
-    storageCtx.lineWidth = 5;
+    // Сегментированная шкала анализа и плотности рисков справа от процентов
+    const bx = 250, by = 72, bw = 232, bh = 58;
+    storageCtx.strokeStyle = 'rgba(125, 211, 252, 0.72)';
+    storageCtx.lineWidth = 4;
     storageCtx.strokeRect(bx, by, bw, bh);
-    storageCtx.fillStyle = '#94a3b8';
-    storageCtx.fillRect(bx + bw, by + 16, 13, 32);
 
     const segW = (bw - 24) / 5;
     for (let s = 0; s < 5; s++) {
@@ -577,6 +578,14 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
         storageCtx.fillRect(sx, by + 8, (segW - 2) * segFill, bh - 16);
       }
     }
+    storageCtx.fillStyle = '#94a3b8';
+    storageCtx.font = '700 13px monospace';
+    storageCtx.textAlign = 'left';
+    storageCtx.fillText('0%', bx, by + bh + 16);
+    storageCtx.textAlign = 'center';
+    storageCtx.fillText('50%', bx + bw / 2, by + bh + 16);
+    storageCtx.textAlign = 'right';
+    storageCtx.fillText('100%', bx + bw, by + bh + 16);
 
     // Разделитель и сетка индексов/коэффициентов
     storageCtx.strokeStyle = 'rgba(56, 189, 248, 0.42)';
@@ -588,8 +597,8 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
     const rows = [
       { label: 'IDX-S', val: telemetry.indexCoeff.toFixed(2), color: '#38bdf8' },
       { label: 'К-РИСК', val: telemetry.riskCoeff.toFixed(2), color: pct >= 60 ? '#fb7185' : '#fcd34d' },
-      { label: 'АРХИВ', val: `${telemetry.storedCount}/${telemetry.totalCount}`, color: '#f8fafc' },
-      { label: 'ШИНА', val: `${telemetry.flowMbps} MB/s`, color: '#c4b5fd' },
+      { label: 'ЛИСТЫ', val: `${telemetry.storedCount}/${telemetry.totalCount}`, color: '#f8fafc' },
+      { label: 'ПОТОК', val: `${telemetry.flowMbps} MB/s`, color: '#c4b5fd' },
     ];
     rows.forEach((r, idx) => {
       const ry = 212 + idx * 54;
@@ -692,6 +701,7 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
     drawStorageTelemetry,
     rightCamLens,
     rightCamLensMat,
+    updateRearTunnel: rearTunnel.updateTunnel,
     materials: {
       electrodeGlowMat,
       violetAccentMat,
