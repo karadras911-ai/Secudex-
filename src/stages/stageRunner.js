@@ -14,6 +14,22 @@ import {
 import { updateTechnosphereAnimation } from '../scene/aiSpheres.js';
 import { updateIntroDirector } from './introDirector.js';
 
+const BRIEF_CORNER_SIGNS = [
+  [-0.5, 0.5],
+  [0.5, 0.5],
+  [-0.5, -0.5],
+  [0.5, -0.5],
+];
+
+const RISK_CARD_ANCHORS = [
+  [-1.15, 0.40],
+  [0, 0.46],
+  [1.15, 0.40],
+  [-1.15, -0.40],
+  [0, -0.46],
+  [1.15, -0.40],
+];
+
 export function createStageRunner({
   state,
   isMobile,
@@ -67,6 +83,40 @@ export function createStageRunner({
   let lastCloudSfxPage = -1;
   let projRefreshAccum = 0;
   let briefRefreshAccum = 0.05;
+
+  const slideTransition = {
+    active: false,
+    elapsed: 0,
+    duration: 0.42,
+    startPos: new THREE.Vector3(),
+    endPos: new THREE.Vector3(),
+    startLook: new THREE.Vector3(),
+    endLook: new THREE.Vector3(),
+    startFov: 48,
+    endFov: 48,
+  };
+
+  function getStageDefaultPose(targetStage) {
+    if (targetStage === STAGES.INTRO) {
+      return { x: 0, y: -0.1, z: isMobile ? 21.8 : 16.6, lx: 0, ly: 2.65, lz: -0.3, fov: isMobile ? 56 : 48 };
+    }
+    if (targetStage === STAGES.CONTRACT_DROP || targetStage === STAGES.CONTRACT_BRIEF) {
+      return { x: 0, y: 0.3, z: isMobile ? 20.6 : 16.6, lx: 0, ly: 2.45, lz: -0.2, fov: isMobile ? 56 : 48 };
+    }
+    if (targetStage === STAGES.SCAN || targetStage === STAGES.SCAN_PAUSED) {
+      return { x: 0, y: 0.25, z: isMobile ? 20.6 : 16.4, lx: 0, ly: 2.45, lz: -0.2, fov: isMobile ? 56 : 48 };
+    }
+    if (targetStage === STAGES.TRANSFER) {
+      return { x: 0, y: -0.7, z: isMobile ? 19.6 : 16.0, lx: 0, ly: 4.3, lz: -0.8, fov: isMobile ? 56 : 48 };
+    }
+    if (targetStage === STAGES.ANALYSIS) {
+      return { x: 0, y: -0.8, z: isMobile ? 15.8 : 12.8, lx: 0, ly: 7.1, lz: -1.3, fov: isMobile ? 56 : 48 };
+    }
+    if (targetStage === STAGES.VERDICT || targetStage === STAGES.POWERDOWN) {
+      return { x: 0, y: 1.35, z: isMobile ? 16.0 : 13.2, lx: 0, ly: 8.75, lz: -1.3, fov: isMobile ? 56 : 48 };
+    }
+    return null;
+  }
 
   function dampCam(targetPos, targetLook, lambda, dt) {
     const alpha = 1 - Math.exp(-lambda * dt);
@@ -164,9 +214,17 @@ export function createStageRunner({
     }
   }
 
-  function enterStage(nextStage, triggerAudioKey = null) {
+  function enterStage(nextStage, triggerAudioKey = null, options = {}) {
     state.hasPlayedStartupIntro = true;
     const prevStage = state.stage;
+    const prevPosX = camera.position.x;
+    const prevPosY = camera.position.y;
+    const prevPosZ = camera.position.z;
+    const prevLookX = controls.target.x;
+    const prevLookY = controls.target.y;
+    const prevLookZ = controls.target.z;
+    const prevFov = camera.fov;
+
     state.stage = nextStage;
     state.stageTimer = 0;
     state.paused = false;
@@ -179,6 +237,20 @@ export function createStageRunner({
     );
     if (!keepManualOrbit) {
       state.userCameraOverride = false;
+    }
+
+    const pose = options?.smoothSlide ? getStageDefaultPose(nextStage) : null;
+    if (pose) {
+      slideTransition.active = true;
+      slideTransition.elapsed = 0;
+      slideTransition.startPos.set(prevPosX, prevPosY, prevPosZ);
+      slideTransition.startLook.set(prevLookX, prevLookY, prevLookZ);
+      slideTransition.startFov = prevFov;
+      slideTransition.endPos.set(pose.x, pose.y, pose.z);
+      slideTransition.endLook.set(pose.lx, pose.ly, pose.lz);
+      slideTransition.endFov = pose.fov;
+    } else {
+      slideTransition.active = false;
     }
 
     if (nextStage === STAGES.CONTRACT_DROP) {
@@ -265,16 +337,14 @@ export function createStageRunner({
   }
 
   function update(dt, t) {
-    spaceData.galaxies.forEach((g, idx) => {
-      g.rotation.y += dt * 0.025 * (idx % 2 === 0 ? 1 : -1);
-    });
-    cubeRig.cyberCoils.forEach((coil, idx) => {
-      coil.rotation.z += dt * (idx % 2 === 0 ? 0.52 : -0.52);
-      if (coil.userData.innerRing) {
-        coil.userData.innerRing.rotation.z -= dt * (idx % 2 === 0 ? 1.15 : -1.15);
-      }
-    });
+    spaceData.updateSpace(dt, t);
+    cubeRig.updateEmitters(dt);
     cubeRig.portalFieldTex.offset.y -= dt * (state.stage === STAGES.SCAN ? 0.62 : 0.16);
+    const tunnelSpeed = (state.stage === STAGES.VERDICT || state.stage === STAGES.BEAM_ASCENT)
+      ? 2.5
+      : ((state.stage === STAGES.SCAN || state.stage === STAGES.TRANSFER || state.stage === STAGES.ANALYSIS) ? 2.1 : 1.35);
+    const tunnelBoost = (state.stage === STAGES.SCAN || state.stage === STAGES.ANALYSIS || state.stage === STAGES.VERDICT) ? 1.24 : 1.0;
+    cubeRig.updateRearTunnel(t, tunnelSpeed, tunnelBoost);
 
     const targetYaw = Math.atan2(camera.position.x, Math.max(0.6, Math.abs(camera.position.z)));
     contractRig.contractPivot.rotation.set(0, Math.min(0.36, Math.max(-0.36, targetYaw)), 0);
@@ -362,7 +432,7 @@ export function createStageRunner({
         cubeRig.portalGlowMat.opacity = 0.26;
       }
 
-      if (!state.userInteracting && !state.userCameraOverride) {
+      if (!state.userInteracting && !state.userCameraOverride && !slideTransition.active) {
         _v2.set(0, 0.35, isMobile ? 20.8 : 16.8);
         _v3.set(0, 2.45, -0.2);
         dampCam(_v2, _v3, 2.6, dt);
@@ -405,17 +475,17 @@ export function createStageRunner({
 
       cubeRig.rightCamLens.getWorldPosition(_briefCamPos);
       const bArr = riskRig.briefRayGeo.attributes.position;
-      const hw = riskRig.briefPlaneW * 0.5;
-      const hh = riskRig.briefPlaneH * 0.5;
-      [[-hw, hh], [hw, hh], [-hw, -hh], [hw, -hh]].forEach(([cx, cy], idx) => {
-        _briefCorner.set(cx, cy, 0);
+      const bw = riskRig.briefPlaneW;
+      const bh = riskRig.briefPlaneH;
+      for (let idx = 0; idx < BRIEF_CORNER_SIGNS.length; idx++) {
+        _briefCorner.set(BRIEF_CORNER_SIGNS[idx][0] * bw, BRIEF_CORNER_SIGNS[idx][1] * bh, 0);
         riskRig.briefFrameGroup.localToWorld(_briefCorner);
         bArr.setXYZ(idx * 2, _briefCamPos.x, _briefCamPos.y, _briefCamPos.z);
         bArr.setXYZ(idx * 2 + 1, _briefCorner.x, _briefCorner.y, _briefCorner.z);
-      });
+      }
       bArr.needsUpdate = true;
 
-      if (!state.userInteracting && !state.userCameraOverride) {
+      if (!state.userInteracting && !state.userCameraOverride && !slideTransition.active) {
         _v2.set(0, 0.25, isMobile ? 20.6 : 16.6);
         _v3.set(0, 2.45, -0.2);
         dampCam(_v2, _v3, 2.6, dt);
@@ -600,10 +670,11 @@ export function createStageRunner({
         const rArr = riskRig.absorbRayGeo.attributes.position;
         const aPos = activeAgent.group.position;
         const cardCenter = riskRig.riskProjGroup.position;
-        [[-1.15, 0.40], [0, 0.46], [1.15, 0.40], [-1.15, -0.40], [0, -0.46], [1.15, -0.40]].forEach(([ox, oy], idx) => {
-          rArr.setXYZ(idx * 2, cardCenter.x + ox * projOut, cardCenter.y + oy * projOut, cardCenter.z);
+        for (let idx = 0; idx < RISK_CARD_ANCHORS.length; idx++) {
+          const anchor = RISK_CARD_ANCHORS[idx];
+          rArr.setXYZ(idx * 2, cardCenter.x + anchor[0] * projOut, cardCenter.y + anchor[1] * projOut, cardCenter.z);
           rArr.setXYZ(idx * 2 + 1, aPos.x, aPos.y, aPos.z);
-        });
+        }
         rArr.needsUpdate = true;
 
         const absorbVisible = absorbT > 0.01 && absorbT < 0.99;
@@ -669,8 +740,6 @@ export function createStageRunner({
         contractRig.archivedSheetGroup.rotateY(-glideEase * 0.85);
         contractRig.archivedSheetGroup.rotateZ(glideEase * 0.32);
 
-        contractRig.foldLeftWing.rotation.y = wingEase * Math.PI * 0.94;
-        contractRig.foldRightWing.rotation.y = -wingEase * Math.PI * 0.94;
         contractRig.foldVertWrap.scale.set(
           1 - compactEase * 0.44 - glideEase * 0.18,
           1 - compactEase * 0.82 - glideEase * 0.06,
@@ -679,10 +748,7 @@ export function createStageRunner({
         contractRig.foldVertWrap.rotation.x = -compactEase * 0.22;
 
         const sheetAlpha = glideP > 0.74 ? Math.max(0, 1 - (glideP - 0.74) / 0.24) : 0.96;
-        contractRig.foldPanels.forEach(pObj => {
-          pObj.mat.opacity = sheetAlpha;
-          pObj.rimMat.opacity = sheetAlpha * 0.78;
-        });
+        contractRig.setFoldState(wingEase * Math.PI * 0.94, sheetAlpha);
 
         // 1100 частиц распада рассчитываются целиком на GPU через uniforms
         contractRig.disintegrateCloud.visible = true;
@@ -697,7 +763,7 @@ export function createStageRunner({
         lights.scanLight.intensity = 0.68 + beamAlpha * 0.9;
       }
 
-      if (!state.userInteracting && !state.userCameraOverride) {
+      if (!state.userInteracting && !state.userCameraOverride && !slideTransition.active) {
         _v2.set(0, 0.25, isMobile ? 20.6 : 16.4);
         _v3.set(0, 2.45, -0.2);
         dampCam(_v2, _v3, 2.8, dt);
@@ -730,7 +796,7 @@ export function createStageRunner({
         }
       }
     } else if (state.stage === STAGES.SCAN_PAUSED) {
-      if (!state.userInteracting && !state.userCameraOverride) {
+      if (!state.userInteracting && !state.userCameraOverride && !slideTransition.active) {
         _v2.set(0, 0.25, isMobile ? 20.6 : 16.4);
         _v3.set(0, 2.45, -0.2);
         dampCam(_v2, _v3, 2.5, dt);
@@ -746,7 +812,7 @@ export function createStageRunner({
       aiRig.agentSpheres.forEach(a => a.setArmorAperture?.(0.55 * pulseAlpha));
       aiRig.flagshipSphere.setArmorAperture?.(0.35 + p * 0.45);
 
-      if (!state.userInteracting && !state.userCameraOverride) {
+      if (!state.userInteracting && !state.userCameraOverride && !slideTransition.active) {
         _v2.set(0, -0.7, isMobile ? 19.6 : 16.0);
         _v3.set(0, 4.3, -0.8);
         dampCam(_v2, _v3, 2.4, dt);
@@ -758,7 +824,7 @@ export function createStageRunner({
     } else if (state.stage === STAGES.ANALYSIS) {
       const p = Math.min(state.stageTimer / STAGE_DURATIONS.analysis, 1);
       aiRig.flagshipSphere.setArmorAperture?.(0.75 + Math.sin(t * 5.0) * 0.15);
-      if (!state.userInteracting && !state.userCameraOverride) {
+      if (!state.userInteracting && !state.userCameraOverride && !slideTransition.active) {
         _v2.set(Math.sin(p * 0.9) * 1.5, -0.8, isMobile ? 15.8 : 12.8);
         _v3.set(0, 7.1, -1.3);
         dampCam(_v2, _v3, 2.8, dt);
@@ -771,7 +837,7 @@ export function createStageRunner({
     } else if (state.stage === STAGES.VERDICT) {
       const p = Math.min(state.stageTimer / STAGE_DURATIONS.verdict, 1);
       aiRig.flagshipSphere.setArmorAperture?.(1.0);
-      if (!state.userInteracting && !state.userCameraOverride) {
+      if (!state.userInteracting && !state.userCameraOverride && !slideTransition.active) {
         _v2.set(0, 1.35, isMobile ? 16.0 : 13.2);
         _v3.set(0, 8.75, -1.3);
         dampCam(_v2, _v3, 4.5, dt);
@@ -843,13 +909,7 @@ export function createStageRunner({
       polarRelayRig.polarOuter.position.y = beamRiseH * 0.5;
       polarRelayRig.polarBeamHead.position.y = beamRiseH;
 
-      polarRelayRig.polarShockRings.forEach(r => {
-        const rp = (t * 0.9 + r.phase) % 1;
-        r.mesh.position.y = rp * beamRiseH;
-        const sc = 0.75 + Math.sin(rp * Math.PI) * 0.7;
-        r.mesh.scale.set(sc, sc, 1);
-        r.mat.opacity = Math.sin(rp * Math.PI) * 0.78;
-      });
+      polarRelayRig.updateShockRings(t, beamRiseH, 1.0);
 
       polarRelayRig.lawyerWindow.visible = true;
       polarRelayRig.lawyerWindow.scale.setScalar(0.32 + _polarCamState.windowReveal * 0.68);
@@ -863,12 +923,7 @@ export function createStageRunner({
       polarRelayRig.polarForwardCoreMat.opacity = fProg * 0.95;
       polarRelayRig.polarForwardOuterMat.opacity = fProg * 0.60;
       polarRelayRig.polarTurnFlare.material.opacity = fProg * 0.88;
-      polarRelayRig.polarForwardRings.forEach(fr => {
-        const rp = (t * 1.15 + fr.phase) % 1;
-        fr.mesh.position.z = rp * polarRelayRig.forwardBeamLen;
-        fr.mesh.scale.setScalar(0.7 + (1 - rp) * 0.85);
-        fr.mat.opacity = fProg * Math.sin(rp * Math.PI) * 0.85;
-      });
+      polarRelayRig.updateForwardRings(t, fProg);
 
       if (p >= 1) {
         enterStage(STAGES.WINDOW_FOCUS);
@@ -899,6 +954,7 @@ export function createStageRunner({
       polarRelayRig.polarOuter.scale.set(1, focusBeamScaleY, 1);
       polarRelayRig.polarOuter.position.y = focusBeamH * 0.5;
       polarRelayRig.polarBeamHead.position.y = focusBeamH;
+      polarRelayRig.updateShockRings(t, focusBeamH, 1 - p);
       polarRelayRig.polarForwardGroup.position.set(0, 132.5, -1.3);
       polarRelayRig.polarForwardGroup.lookAt(0, 138, -142);
       polarRelayRig.polarForwardGroup.visible = p < 0.95;
@@ -907,11 +963,7 @@ export function createStageRunner({
       polarRelayRig.polarForwardCoreMat.opacity = 0.88 * (1 - p);
       polarRelayRig.polarForwardOuterMat.opacity = 0.48 * (1 - p);
       polarRelayRig.polarTurnFlare.material.opacity = 0.85 * (1 - p);
-      polarRelayRig.polarForwardRings.forEach(fr => {
-        const rp = (t * 1.15 + fr.phase) % 1;
-        fr.mesh.position.z = rp * polarRelayRig.forwardBeamLen;
-        fr.mat.opacity = (1 - p) * Math.sin(rp * Math.PI) * 0.72;
-      });
+      polarRelayRig.updateForwardRings(t, 1 - p, 1.0);
 
       if (p >= 1) {
         enterStage(STAGES.WINDOW_RUSH);
@@ -947,6 +999,24 @@ export function createStageRunner({
 
       if (p >= 1) {
         enterStage(STAGES.LOGO_REVEAL);
+      }
+    }
+
+    if (slideTransition.active) {
+      if (state.userInteracting) {
+        slideTransition.active = false;
+      } else {
+        slideTransition.elapsed += dt;
+        const u = Math.min(1, slideTransition.elapsed / slideTransition.duration);
+        const ease = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+        camera.position.lerpVectors(slideTransition.startPos, slideTransition.endPos, ease);
+        controls.target.lerpVectors(slideTransition.startLook, slideTransition.endLook, ease);
+        const nextFov = slideTransition.startFov + (slideTransition.endFov - slideTransition.startFov) * ease;
+        if (Math.abs(camera.fov - nextFov) > 0.01) {
+          camera.fov = nextFov;
+          camera.updateProjectionMatrix();
+        }
+        if (u >= 1) slideTransition.active = false;
       }
     }
 

@@ -57,7 +57,13 @@ export function createRiskAbsorptionRig(scene, maxAnisotropy, isMobile, agentSpe
   const riskCubeTex = new THREE.CanvasTexture(riskCubeCanvas);
   configureCrispTexture(riskCubeTex, maxAnisotropy, true);
 
+  const _tmpAccentColor = new THREE.Color();
+  let lastRiskKey = '';
   function drawRiskCubeProjection(pageData, accentHex = 0x38bdf8) {
+    const rKey = `${pageData.riskCode}|${accentHex}`;
+    if (rKey === lastRiskKey) return;
+    lastRiskKey = rKey;
+
     const w = riskCubeCanvas.width;
     const h = riskCubeCanvas.height;
     riskCubeCtx.clearRect(0, 0, w, h);
@@ -72,11 +78,11 @@ export function createRiskAbsorptionRig(scene, maxAnisotropy, isMobile, agentSpe
     riskCubeCtx.fillStyle = grad;
     riskCubeCtx.fillRect(14, 14, w - 28, h - 28);
 
-    riskCubeCtx.strokeStyle = 'rgba(251, 113, 133, 0.88)';
-    riskCubeCtx.lineWidth = 5;
+    riskCubeCtx.strokeStyle = 'rgba(251, 113, 133, 0.92)';
+    riskCubeCtx.lineWidth = 6;
     riskCubeCtx.strokeRect(14, 14, w - 28, h - 28);
 
-    const cHex = '#' + new THREE.Color(accentHex).getHexString();
+    const cHex = '#' + _tmpAccentColor.setHex(accentHex).getHexString();
     riskCubeCtx.fillStyle = cHex;
     riskCubeCtx.font = '800 30px monospace';
     riskCubeCtx.textAlign = 'left';
@@ -109,9 +115,8 @@ export function createRiskAbsorptionRig(scene, maxAnisotropy, isMobile, agentSpe
     map: riskCubeTex, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false, fog: false,
   });
   const riskProjPlane = new THREE.Mesh(new THREE.PlaneGeometry(2.65, 1.0), riskProjMat);
-  const riskProjBorderMat = new THREE.LineBasicMaterial({ color: 0xff3b5c, transparent: true, opacity: 0, fog: false });
-  const riskProjBorder = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(2.72, 1.06)), riskProjBorderMat);
-  riskProjGroup.add(riskProjPlane, riskProjBorder);
+  const riskProjBorderMat = { color: new THREE.Color(0xff3b5c), opacity: 0 };
+  riskProjGroup.add(riskProjPlane);
   scene.add(riskProjGroup);
 
   const absorbRayVerts = new Float32Array(6 * 6);
@@ -173,7 +178,12 @@ export function createRiskAbsorptionRig(scene, maxAnisotropy, isMobile, agentSpe
   const briefTex = new THREE.CanvasTexture(briefCanvas);
   configureCrispTexture(briefTex, maxAnisotropy, true);
 
+  let lastBriefKey = '';
   function drawBriefProjection(bState) {
+    const bKey = bState.lines.map(l => `${Math.round(l.alpha * 50)}:${Math.round(l.slideY * 2)}`).join('|');
+    if (bKey === lastBriefKey) return;
+    lastBriefKey = bKey;
+
     const w = briefCanvas.width;
     const h = briefCanvas.height;
     briefCtx.clearRect(0, 0, w, h);
@@ -191,8 +201,8 @@ export function createRiskAbsorptionRig(scene, maxAnisotropy, isMobile, agentSpe
     briefCtx.fillStyle = 'rgba(125, 211, 252, 0.04)';
     for (let y = 36; y < h - 36; y += 24) briefCtx.fillRect(30, y, w - 60, 2.5);
 
-    briefCtx.strokeStyle = 'rgba(56, 189, 248, 0.88)';
-    briefCtx.lineWidth = 5;
+    briefCtx.strokeStyle = 'rgba(56, 189, 248, 0.92)';
+    briefCtx.lineWidth = 6;
     briefCtx.strokeRect(20, 20, w - 40, h - 40);
 
     briefCtx.strokeStyle = 'rgba(224, 242, 254, 0.96)';
@@ -253,12 +263,8 @@ export function createRiskAbsorptionRig(scene, maxAnisotropy, isMobile, agentSpe
   const briefPlaneW = isMobile ? 3.25 : 3.85;
   const briefPlaneH = briefPlaneW * (500 / 920);
   const briefPlane = new THREE.Mesh(new THREE.PlaneGeometry(briefPlaneW, briefPlaneH), briefMat);
-  const briefBorderMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0, fog: false });
-  const briefBorder = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.PlaneGeometry(briefPlaneW + 0.08, briefPlaneH + 0.08)),
-    briefBorderMat
-  );
-  briefFrameGroup.add(briefPlane, briefBorder);
+  const briefBorderMat = { opacity: 0 };
+  briefFrameGroup.add(briefPlane);
 
   const briefRayVerts = new Float32Array(4 * 6);
   const briefRayGeo = new THREE.BufferGeometry();

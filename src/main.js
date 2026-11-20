@@ -32,7 +32,7 @@ const container = document.getElementById('canvas-container');
 const irisOverlay = document.getElementById('iris-overlay');
 const finalLogoScreen = document.getElementById('final-logo-screen');
 
-const { scene, camera, renderer, controls, composer, lights, updatePostProcessing } =
+const { scene, camera, renderer, controls, composer, sceneStats, lights, updatePostProcessing } =
   initSceneRenderer(container, isMobile, isSoftwareGl);
 
 const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
@@ -53,7 +53,7 @@ const polarRelayRig = createPolarRelayRig(scene, camera, aiRig.flagshipPos, aiRi
 let stageRunner = null;
 const hud = createHudController({
   state,
-  onEnterStage: (nextStage, audioKey) => stageRunner?.enterStage(nextStage, audioKey),
+  onEnterStage: (nextStage, audioKey, options) => stageRunner?.enterStage(nextStage, audioKey, options),
   voicePlayer,
 });
 
@@ -146,13 +146,26 @@ if (!isSoftwareGl) {
 
 let lastFrameTime = performance.now();
 const startTimestamp = lastFrameTime;
+let fpsFrameCount = 0;
+let fpsWindowStart = lastFrameTime;
+let currentFps = 60;
+let perfPushAccum = 0;
 
 function tick(now) {
   const nowMs = typeof now === 'number' ? now : performance.now();
   const maxDt = isSoftwareGl ? 0.65 : 0.08;
-  const dt = Math.min((nowMs - lastFrameTime) / 1000, maxDt);
+  const rawDtSec = Math.max(0.0001, (nowMs - lastFrameTime) / 1000);
+  const dt = Math.min(rawDtSec, maxDt);
   lastFrameTime = nowMs;
   const elapsedSec = (nowMs - startTimestamp) * 0.001;
+
+  fpsFrameCount++;
+  const fpsSpan = nowMs - fpsWindowStart;
+  if (fpsSpan >= 500) {
+    currentFps = (fpsFrameCount * 1000) / fpsSpan;
+    fpsFrameCount = 0;
+    fpsWindowStart = nowMs;
+  }
 
   stageRunner.update(dt, elapsedSec);
 
@@ -161,6 +174,19 @@ function tick(now) {
     composer.render();
   } else {
     renderer.render(scene, camera);
+    sceneStats.calls = renderer.info.render.calls;
+    sceneStats.triangles = renderer.info.render.triangles;
+  }
+
+  perfPushAccum += rawDtSec;
+  if (perfPushAccum >= 0.25) {
+    perfPushAccum = 0;
+    hud.updatePerfStats({
+      fps: currentFps,
+      calls: sceneStats.calls,
+      triangles: sceneStats.triangles,
+      dpr: sceneStats.dpr,
+    });
   }
 
   if (isSoftwareGl) {

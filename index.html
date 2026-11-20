@@ -28,7 +28,7 @@
       <div class="ruler-steps" id="ruler-steps"></div>
     </div>
     <div class="ruler-right-actions">
-      <div class="ruler-telemetry-badge" id="ruler-telemetry-badge">УГРОЗ: 0/5 • БАТ: 0%</div>
+      <div class="ruler-telemetry-badge" id="ruler-telemetry-badge">УГРОЗ: 0/5 • АНАЛИЗ: 0%</div>
       <button id="reset-btn" type="button">СБРОС</button>
     </div>
   </div>
@@ -46,6 +46,19 @@
     <div id="ruler-detail-body"></div>
   </div>
 </nav>
+
+<aside id="perf-diag-wrap" aria-label="Диагностика производительности 3D">
+  <button id="perf-diag-btn" type="button" aria-expanded="false">
+    <span class="perf-dot" aria-hidden="true"></span>
+    <span id="perf-fps-pill">FPS: --</span>
+  </button>
+  <div id="perf-diag-panel" role="region" aria-label="Метрики WebGL">
+    <div class="perf-row"><span>FPS</span><strong id="perf-fps">--</strong></div>
+    <div class="perf-row"><span>Draw Calls</span><strong id="perf-calls">--</strong></div>
+    <div class="perf-row"><span>Triangles</span><strong id="perf-tris">--</strong></div>
+    <div class="perf-row"><span>Pixel Ratio</span><strong id="perf-dpr">--</strong></div>
+  </div>
+</aside>
 
 <div id="iris-overlay"></div>
 <div id="final-logo-screen">

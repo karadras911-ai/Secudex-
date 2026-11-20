@@ -3,7 +3,6 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { CAMERA_LIMITS } from '../config/constants.js';
@@ -69,21 +68,25 @@ export function initSceneRenderer(container, isMobile, isSoftwareGl) {
   const camera = new THREE.PerspectiveCamera(isMobile ? 56 : 48, window.innerWidth / window.innerHeight, 0.1, 360);
   camera.position.set(0, -0.1, isMobile ? 22.8 : 17.6);
 
+  const maxDpr = isMobile ? 1.25 : 1.5;
+  const getTargetDpr = () => (isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, maxDpr));
+  let activeDpr = getTargetDpr();
+
   const renderer = new THREE.WebGLRenderer({
     antialias: !isSoftwareGl,
     powerPreference: 'high-performance',
   });
+  renderer.shadowMap.enabled = false;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.04;
+  renderer.setPixelRatio(activeDpr);
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2.5));
   container.appendChild(renderer.domElement);
 
   scene.environment = buildStudioSoftboxEnv(renderer);
 
   const controls = new OrbitControls(camera, renderer.domElement);
-  // Полное отключение инерции/доп-прокрутки после остановки вращения, чтобы камера чётко фиксировалась
   controls.enableDamping = false;
   controls.minDistance = CAMERA_LIMITS.minDistance;
   controls.maxDistance = CAMERA_LIMITS.maxDistance;
@@ -108,38 +111,42 @@ export function initSceneRenderer(container, isMobile, isSoftwareGl) {
 
   let composer = null;
   let bloomPass = null;
-  let bokehPass = null;
   let cinemaOpticsPass = null;
-  let smoothedDofFocus = 16.5;
   const opticsState = { focus: 16.5, aperture: 0, bloomStrength: 0.14, chromaAmount: 0 };
+  const sceneStats = { calls: 0, triangles: 0, dpr: activeDpr };
 
   if (!isSoftwareGl) {
     const w = Math.max(1, window.innerWidth);
     const h = Math.max(1, window.innerHeight);
-    const postDpr = Math.min(window.devicePixelRatio || 1, 2.5);
     const maxSamples = renderer.capabilities.isWebGL2 ? Math.min(4, renderer.capabilities.maxSamples || 4) : 0;
 
-    const rt = new THREE.WebGLRenderTarget(Math.floor(w * postDpr), Math.floor(h * postDpr), {
+    const rt = new THREE.WebGLRenderTarget(Math.floor(w * activeDpr), Math.floor(h * activeDpr), {
       type: THREE.HalfFloatType,
       samples: maxSamples,
     });
     composer = new EffectComposer(renderer, rt);
-    composer.setPixelRatio(postDpr);
+    composer.setPixelRatio(activeDpr);
     composer.setSize(w, h);
-    composer.addPass(new RenderPass(scene, camera));
 
-    // Высокий порог 1.45 гарантирует, что светятся только яркие ядра и плазма без ореола и мыла на тексте
-    bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(Math.max(1, Math.floor(w * 0.5)), Math.max(1, Math.floor(h * 0.5))),
-      0.12,
-      0.12,
-      1.45
-    );
+    const renderPass = new RenderPass(scene, camera);
+    const origRenderPassRender = renderPass.render.bind(renderPass);
+    renderPass.render = (ren, writeBuffer, readBuffer, deltaTime, maskActive) => {
+      const prevAuto = ren.info.autoReset;
+      ren.info.autoReset = false;
+      ren.info.reset();
+      origRenderPassRender(ren, writeBuffer, readBuffer, deltaTime, maskActive);
+      sceneStats.calls = ren.info.render.calls;
+      sceneStats.triangles = ren.info.render.triangles;
+      ren.info.autoReset = prevAuto;
+    };
+    composer.addPass(renderPass);
+
+    // Половинное разрешение прохода размытия Bloom (0.5x) при сохранении яркости и радиуса свечения
+    const bloomW = Math.max(1, Math.floor(w * activeDpr * 0.5));
+    const bloomH = Math.max(1, Math.floor(h * activeDpr * 0.5));
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(bloomW, bloomH), 0.12, 0.12, 1.45);
     composer.addPass(bloomPass);
-
-    bokehPass = new BokehPass(scene, camera, { focus: 16.5, aperture: 0, maxblur: 0.003 });
-    bokehPass.enabled = false;
-    composer.addPass(bokehPass);
+    bloomPass.setSize(bloomW, bloomH);
 
     cinemaOpticsPass = new ShaderPass(CinemaOpticsShader);
     composer.addPass(cinemaOpticsPass);
@@ -150,12 +157,6 @@ export function initSceneRenderer(container, isMobile, isSoftwareGl) {
     if (!composer) return;
     const camDist = camera.position.distanceTo(controls.target);
     computeCinemaOptics(stage, camDist, warpActive, opticsState);
-    smoothedDofFocus += (opticsState.focus - smoothedDofFocus) * 0.16;
-    if (bokehPass) {
-      bokehPass.enabled = opticsState.aperture > 0;
-      bokehPass.uniforms.focus.value = smoothedDofFocus;
-      bokehPass.uniforms.aperture.value = opticsState.aperture;
-    }
     if (bloomPass) {
       bloomPass.strength = opticsState.bloomStrength;
     }
@@ -168,18 +169,19 @@ export function initSceneRenderer(container, isMobile, isSoftwareGl) {
   function onResize() {
     const w = Math.max(1, window.innerWidth);
     const h = Math.max(1, window.innerHeight);
+    activeDpr = getTargetDpr();
+    sceneStats.dpr = activeDpr;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    renderer.setPixelRatio(activeDpr);
     renderer.setSize(w, h);
     if (composer) {
-      const postDpr = Math.min(window.devicePixelRatio || 1, 2.5);
-      composer.setPixelRatio(postDpr);
+      composer.setPixelRatio(activeDpr);
       composer.setSize(w, h);
       if (bloomPass) {
-        bloomPass.resolution.set(Math.max(1, Math.floor(w * 0.5)), Math.max(1, Math.floor(h * 0.5)));
-      }
-      if (bokehPass) {
-        bokehPass.uniforms.aspect.value = w / h;
+        const bloomW = Math.max(1, Math.floor(w * activeDpr * 0.5));
+        const bloomH = Math.max(1, Math.floor(h * activeDpr * 0.5));
+        bloomPass.setSize(bloomW, bloomH);
       }
     }
   }
@@ -191,6 +193,7 @@ export function initSceneRenderer(container, isMobile, isSoftwareGl) {
     renderer,
     controls,
     composer,
+    sceneStats,
     lights: { hemiLight, keyLight, rimLight, bottomLight, flagshipLight, scanLight },
     updatePostProcessing,
   };

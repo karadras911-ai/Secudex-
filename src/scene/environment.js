@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { configureCrispTexture, createLogoTextureAndFallback, heightCanvasToNormalTex } from '../core/textures.js';
+import { prepareGeometry, mergePreparedGeometries } from '../core/geometryMerge.js';
+import { createTunnelPulseLinesMat } from '../core/shaders.js';
 import { LOGO_ASSET_URL, CUBE_SIZE } from '../config/constants.js';
 
 export function createBalancedSpace(scene, isMobile) {
@@ -102,6 +104,31 @@ export function createBalancedSpace(scene, isMobile) {
   });
   spaceGroup.add(new THREE.Points(sGeo, starMat));
 
+  const makeGalaxyCombinedGlowTex = (coreColorHex, haloColorHex, coreOp, haloOp) => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const ctx = c.getContext('2d');
+    const cCol = new THREE.Color(coreColorHex);
+    const hCol = new THREE.Color(haloColorHex);
+    const gHalo = ctx.createRadialGradient(128, 128, 2, 128, 128, 126);
+    gHalo.addColorStop(0, `rgba(${Math.round(hCol.r * 255)}, ${Math.round(hCol.g * 255)}, ${Math.round(hCol.b * 255)}, ${haloOp})`);
+    gHalo.addColorStop(0.55, `rgba(${Math.round(hCol.r * 255)}, ${Math.round(hCol.g * 255)}, ${Math.round(hCol.b * 255)}, ${(haloOp * 0.35).toFixed(3)})`);
+    gHalo.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gHalo;
+    ctx.fillRect(0, 0, 256, 256);
+
+    const gCore = ctx.createRadialGradient(128, 128, 1, 128, 128, 72);
+    gCore.addColorStop(0, `rgba(${Math.round(cCol.r * 255)}, ${Math.round(cCol.g * 255)}, ${Math.round(cCol.b * 255)}, ${coreOp})`);
+    gCore.addColorStop(0.35, `rgba(${Math.round(cCol.r * 255)}, ${Math.round(cCol.g * 255)}, ${Math.round(cCol.b * 255)}, ${(coreOp * 0.42).toFixed(3)})`);
+    gCore.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gCore;
+    ctx.fillRect(0, 0, 256, 256);
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  };
+
   const createRealisticGalaxy = (cfg) => {
     const tiltGroup = new THREE.Group();
     const diskGroup = new THREE.Group();
@@ -163,27 +190,19 @@ export function createBalancedSpace(scene, isMobile) {
       depthWrite: false,
     })));
 
-    const coreSprite = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: nebulaCoreTex,
-      color: cfg.coreGlowHex,
+    const combinedGlowTex = makeGalaxyCombinedGlowTex(
+      cfg.coreGlowHex, cfg.haloGlowHex, cfg.coreGlowOpacity, cfg.haloGlowOpacity
+    );
+    const glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: combinedGlowTex,
+      color: 0xffffff,
       transparent: true,
-      opacity: cfg.coreGlowOpacity,
+      opacity: 1.0,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     }));
-    coreSprite.scale.set(...cfg.coreGlowScale);
-    diskGroup.add(coreSprite);
-
-    const haloSprite = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: nebulaCoreTex,
-      color: cfg.haloGlowHex,
-      transparent: true,
-      opacity: cfg.haloGlowOpacity,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }));
-    haloSprite.scale.set(...cfg.haloGlowScale);
-    diskGroup.add(haloSprite);
+    glowSprite.scale.set(...cfg.haloGlowScale);
+    diskGroup.add(glowSprite);
 
     tiltGroup.add(diskGroup);
     tiltGroup.position.set(...cfg.pos);
@@ -430,13 +449,7 @@ export function createRearTunnel(cyberArmorMat, maxAnisotropy = 4) {
 
   const armorMaps = createTunnelArmorMaps(maxAnisotropy);
 
-  const tunnelHullMat = new THREE.MeshStandardMaterial({
-    color: 0x070a14,
-    roughness: 0.78,
-    metalness: 0.45,
-  });
-
-  const tunnelArmorMat = new THREE.MeshPhysicalMaterial({
+  const tunnelArmorMat = new THREE.MeshStandardMaterial({
     color: 0xdbeafe,
     map: armorMaps.colorTex,
     normalMap: armorMaps.normalTex,
@@ -444,116 +457,119 @@ export function createRearTunnel(cyberArmorMat, maxAnisotropy = 4) {
     roughnessMap: armorMaps.roughTex,
     roughness: 0.36,
     metalness: 0.88,
-    clearcoat: 0.32,
-    clearcoatRoughness: 0.28,
     emissive: 0xffffff,
     emissiveMap: armorMaps.emissiveTex,
     emissiveIntensity: 0.68,
   });
 
-  // Внешний несущий короб туннеля
-  const tunnelTop = new THREE.Mesh(new THREE.BoxGeometry(tunnelSpan, tunnelWallThick, tunnelLen), tunnelHullMat);
-  tunnelTop.position.set(0, tunnelSpan / 2 - tunnelWallThick / 2, -tunnelLen / 2 - 0.08);
-  const tunnelBottom = new THREE.Mesh(new THREE.BoxGeometry(tunnelSpan, tunnelWallThick, tunnelLen), tunnelHullMat);
-  tunnelBottom.position.set(0, -tunnelSpan / 2 + tunnelWallThick / 2, -tunnelLen / 2 - 0.08);
-  const tunnelLeft = new THREE.Mesh(new THREE.BoxGeometry(tunnelWallThick, innerSpan, tunnelLen), tunnelHullMat);
-  tunnelLeft.position.set(-tunnelSpan / 2 + tunnelWallThick / 2, 0, -tunnelLen / 2 - 0.08);
-  const tunnelRight = new THREE.Mesh(new THREE.BoxGeometry(tunnelWallThick, innerSpan, tunnelLen), tunnelHullMat);
-  tunnelRight.position.set(tunnelSpan / 2 - tunnelWallThick / 2, 0, -tunnelLen / 2 - 0.08);
-  rearTunnelGroup.add(tunnelTop, tunnelBottom, tunnelLeft, tunnelRight);
+  const _m = new THREE.Matrix4();
+  const _q = new THREE.Quaternion();
+  const _e = new THREE.Euler();
+  const _p = new THREE.Vector3();
+  const _s = new THREE.Vector3(1, 1, 1);
 
-  // Рельефная внутренняя обшивка на 4 стенах с ровной развёрткой вдоль глубины Z
+  function buildTransformedGeo(srcGeo, px, py, pz, rx = 0, ry = 0, rz = 0, order = 'XYZ', colorHex = null) {
+    _e.set(rx, ry, rz, order);
+    _q.setFromEuler(_e);
+    _p.set(px, py, pz);
+    _m.compose(_p, _q, _s);
+    return prepareGeometry(srcGeo, _m, colorHex);
+  }
+
+  // Объединённая рельефная внутренняя обшивка на 4 стенах (1 draw call)
   const wallPanelGeo = new THREE.PlaneGeometry(innerSpan, tunnelLen);
-  const innerTop = new THREE.Mesh(wallPanelGeo, tunnelArmorMat);
-  innerTop.position.set(0, innerSpan / 2 - 0.005, -tunnelLen / 2 - 0.08);
-  innerTop.rotation.x = Math.PI / 2;
+  const armorWallGeos = [
+    buildTransformedGeo(wallPanelGeo, 0, innerSpan / 2 - 0.005, -tunnelLen / 2 - 0.08, Math.PI / 2, 0, 0),
+    buildTransformedGeo(wallPanelGeo, 0, -innerSpan / 2 + 0.005, -tunnelLen / 2 - 0.08, -Math.PI / 2, 0, 0),
+    buildTransformedGeo(wallPanelGeo, -innerSpan / 2 + 0.005, 0, -tunnelLen / 2 - 0.08, Math.PI / 2, Math.PI / 2, 0, 'YXZ'),
+    buildTransformedGeo(wallPanelGeo, innerSpan / 2 - 0.005, 0, -tunnelLen / 2 - 0.08, Math.PI / 2, -Math.PI / 2, 0, 'YXZ'),
+  ];
+  wallPanelGeo.dispose();
+  rearTunnelGroup.add(new THREE.Mesh(mergePreparedGeometries(armorWallGeos), tunnelArmorMat));
 
-  const innerBot = new THREE.Mesh(wallPanelGeo, tunnelArmorMat);
-  innerBot.position.set(0, -innerSpan / 2 + 0.005, -tunnelLen / 2 - 0.08);
-  innerBot.rotation.x = -Math.PI / 2;
-
-  const innerLeft = new THREE.Mesh(wallPanelGeo, tunnelArmorMat);
-  innerLeft.position.set(-innerSpan / 2 + 0.005, 0, -tunnelLen / 2 - 0.08);
-  innerLeft.rotation.order = 'YXZ';
-  innerLeft.rotation.y = Math.PI / 2;
-  innerLeft.rotation.x = Math.PI / 2;
-
-  const innerRight = new THREE.Mesh(wallPanelGeo, tunnelArmorMat);
-  innerRight.position.set(innerSpan / 2 - 0.005, 0, -tunnelLen / 2 - 0.08);
-  innerRight.rotation.order = 'YXZ';
-  innerRight.rotation.y = -Math.PI / 2;
-  innerRight.rotation.x = Math.PI / 2;
-
-  rearTunnelGroup.add(innerTop, innerBot, innerLeft, innerRight);
-
-  // Продольные силовые трубы-магистрали и неоновые рельсы по углам туннеля
+  // Объединённые продольные рельсы (1 draw call) и внешний короб + трубы + шпангоуты (1 draw call через cyberArmorMat)
   const railOffset = innerSpan / 2 - 0.07;
   const tunnelRailGeo = new THREE.BoxGeometry(0.055, 0.055, tunnelLen - 2);
   const tunnelRailMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.46 });
   const conduitGeo = new THREE.CylinderGeometry(0.055, 0.055, tunnelLen - 2, 8);
   conduitGeo.rotateX(Math.PI / 2);
-  [[-railOffset, railOffset], [railOffset, railOffset], [-railOffset, -railOffset], [railOffset, -railOffset]].forEach(([rx, ry]) => {
-    const rail = new THREE.Mesh(tunnelRailGeo, tunnelRailMat);
-    rail.position.set(rx, ry, -tunnelLen / 2 - 0.08);
-    const pipe = new THREE.Mesh(conduitGeo, cyberArmorMat);
-    pipe.position.set(rx * 0.94, ry * 0.94, -tunnelLen / 2 - 0.08);
-    rearTunnelGroup.add(rail, pipe);
-  });
 
-  // Локальный внутренний свет туннеля, чтобы рельефные рёбра, болты и фаски давали объёмный блик
+  const railGeos = [];
+  const hBoxGeo = new THREE.BoxGeometry(tunnelSpan, tunnelWallThick, tunnelLen);
+  const vBoxGeo = new THREE.BoxGeometry(tunnelWallThick, innerSpan, tunnelLen);
+  const armorStructGeos = [
+    buildTransformedGeo(hBoxGeo, 0, tunnelSpan / 2 - tunnelWallThick / 2, -tunnelLen / 2 - 0.08, 0, 0, 0, 'XYZ', 0x070a14),
+    buildTransformedGeo(hBoxGeo, 0, -tunnelSpan / 2 + tunnelWallThick / 2, -tunnelLen / 2 - 0.08, 0, 0, 0, 'XYZ', 0x070a14),
+    buildTransformedGeo(vBoxGeo, -tunnelSpan / 2 + tunnelWallThick / 2, 0, -tunnelLen / 2 - 0.08, 0, 0, 0, 'XYZ', 0x070a14),
+    buildTransformedGeo(vBoxGeo, tunnelSpan / 2 - tunnelWallThick / 2, 0, -tunnelLen / 2 - 0.08, 0, 0, 0, 'XYZ', 0x070a14),
+  ];
+  hBoxGeo.dispose();
+  vBoxGeo.dispose();
+  [[-railOffset, railOffset], [railOffset, railOffset], [-railOffset, -railOffset], [railOffset, -railOffset]].forEach(([rx, ry]) => {
+    railGeos.push(buildTransformedGeo(tunnelRailGeo, rx, ry, -tunnelLen / 2 - 0.08));
+    armorStructGeos.push(buildTransformedGeo(conduitGeo, rx * 0.94, ry * 0.94, -tunnelLen / 2 - 0.08, 0, 0, 0, 'XYZ', 0x150929));
+  });
+  tunnelRailGeo.dispose();
+  conduitGeo.dispose();
+  rearTunnelGroup.add(new THREE.Mesh(mergePreparedGeometries(railGeos), tunnelRailMat));
+
+  // Локальный свет туннеля для подчёркивания рельефа плит, шпангоутов и заклёпок
   const tunnelMouthLight = new THREE.PointLight(0x38bdf8, 3.2, 30, 1.35);
   tunnelMouthLight.position.set(0, 0.15, -5.8);
   rearTunnelGroup.add(tunnelMouthLight);
 
   const ringSteps = [-1.4, -3.5, -6.2, -9.6, -13.8, -19.0, -25.2, -32.6, -41.2, -51.0, -62.0, -74.0, -86.0, -95.0];
   const innerFrameGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(innerSpan - 0.06, innerSpan - 0.06, 0.24));
+  const frameBasePos = innerFrameGeo.getAttribute('position').array;
+  const vertsPerRing = innerFrameGeo.getAttribute('position').count;
+  const mergedLinePos = new Float32Array(ringSteps.length * vertsPerRing * 3);
+  const mergedLineParity = new Float32Array(ringSteps.length * vertsPerRing);
+
   const outerRibTopGeo = new THREE.BoxGeometry(tunnelSpan + 0.14, 0.14, 0.28);
   const outerRibSideGeo = new THREE.BoxGeometry(0.14, tunnelSpan + 0.14, 0.28);
   const innerBulkheadTopGeo = new THREE.BoxGeometry(innerSpan - 0.04, 0.09, 0.24);
   const innerBulkheadSideGeo = new THREE.BoxGeometry(0.09, innerSpan - 0.04, 0.24);
 
-  const pulseRings = [];
   ringSteps.forEach((rz, idx) => {
-    const depthFade = Math.max(0.10, 1 - idx / ringSteps.length);
-    const frameMat = new THREE.LineBasicMaterial({
-      color: idx % 2 === 0 ? 0x38bdf8 : 0xa855f7,
-      transparent: true,
-      opacity: 0.45 * depthFade,
-    });
-    const frameLine = new THREE.LineSegments(innerFrameGeo, frameMat);
-    frameLine.position.z = rz;
-    rearTunnelGroup.add(frameLine);
+    const parity = idx % 2 === 0 ? 0.0 : 1.0;
+    const baseOffset = idx * vertsPerRing;
+    for (let v = 0; v < vertsPerRing; v++) {
+      mergedLinePos[(baseOffset + v) * 3] = frameBasePos[v * 3];
+      mergedLinePos[(baseOffset + v) * 3 + 1] = frameBasePos[v * 3 + 1];
+      mergedLinePos[(baseOffset + v) * 3 + 2] = frameBasePos[v * 3 + 2] + rz;
+      mergedLineParity[baseOffset + v] = parity;
+    }
 
-    // Внутренние физические шпангоуты для настоящего рельефа силуэта
-    const inTop = new THREE.Mesh(innerBulkheadTopGeo, cyberArmorMat);
-    inTop.position.set(0, innerSpan / 2 - 0.045, rz);
-    const inBot = new THREE.Mesh(innerBulkheadTopGeo, cyberArmorMat);
-    inBot.position.set(0, -innerSpan / 2 + 0.045, rz);
-    const inL = new THREE.Mesh(innerBulkheadSideGeo, cyberArmorMat);
-    inL.position.set(-innerSpan / 2 + 0.045, 0, rz);
-    const inR = new THREE.Mesh(innerBulkheadSideGeo, cyberArmorMat);
-    inR.position.set(innerSpan / 2 - 0.045, 0, rz);
-    rearTunnelGroup.add(inTop, inBot, inL, inR);
-
-    pulseRings.push({
-      frameMat,
-      depthFade,
-      normZ: Math.abs(rz) / tunnelLen,
-      isEven: idx % 2 === 0,
-    });
+    armorStructGeos.push(
+      buildTransformedGeo(innerBulkheadTopGeo, 0, innerSpan / 2 - 0.045, rz, 0, 0, 0, 'XYZ', 0x150929),
+      buildTransformedGeo(innerBulkheadTopGeo, 0, -innerSpan / 2 + 0.045, rz, 0, 0, 0, 'XYZ', 0x150929),
+      buildTransformedGeo(innerBulkheadSideGeo, -innerSpan / 2 + 0.045, 0, rz, 0, 0, 0, 'XYZ', 0x150929),
+      buildTransformedGeo(innerBulkheadSideGeo, innerSpan / 2 - 0.045, 0, rz, 0, 0, 0, 'XYZ', 0x150929)
+    );
 
     if (idx % 2 === 0) {
-      const rTop = new THREE.Mesh(outerRibTopGeo, cyberArmorMat);
-      rTop.position.set(0, tunnelSpan / 2 + 0.04, rz);
-      const rBot = new THREE.Mesh(outerRibTopGeo, cyberArmorMat);
-      rBot.position.set(0, -tunnelSpan / 2 - 0.04, rz);
-      const rL = new THREE.Mesh(outerRibSideGeo, cyberArmorMat);
-      rL.position.set(-tunnelSpan / 2 - 0.04, 0, rz);
-      const rR = new THREE.Mesh(outerRibSideGeo, cyberArmorMat);
-      rR.position.set(tunnelSpan / 2 + 0.04, 0, rz);
-      rearTunnelGroup.add(rTop, rBot, rL, rR);
+      armorStructGeos.push(
+        buildTransformedGeo(outerRibTopGeo, 0, tunnelSpan / 2 + 0.04, rz, 0, 0, 0, 'XYZ', 0x150929),
+        buildTransformedGeo(outerRibTopGeo, 0, -tunnelSpan / 2 - 0.04, rz, 0, 0, 0, 'XYZ', 0x150929),
+        buildTransformedGeo(outerRibSideGeo, -tunnelSpan / 2 - 0.04, 0, rz, 0, 0, 0, 'XYZ', 0x150929),
+        buildTransformedGeo(outerRibSideGeo, tunnelSpan / 2 + 0.04, 0, rz, 0, 0, 0, 'XYZ', 0x150929)
+      );
     }
   });
+  innerFrameGeo.dispose();
+  outerRibTopGeo.dispose();
+  outerRibSideGeo.dispose();
+  innerBulkheadTopGeo.dispose();
+  innerBulkheadSideGeo.dispose();
+
+  rearTunnelGroup.add(new THREE.Mesh(mergePreparedGeometries(armorStructGeos), cyberArmorMat));
+
+  // Все 14 колец импульсов объединены в 1 LineSegments draw call на GPU-шейдере
+  const pulseLinesGeo = new THREE.BufferGeometry();
+  pulseLinesGeo.setAttribute('position', new THREE.BufferAttribute(mergedLinePos, 3));
+  pulseLinesGeo.setAttribute('aRingParity', new THREE.BufferAttribute(mergedLineParity, 1));
+  const pulseLinesMat = createTunnelPulseLinesMat(tunnelLen);
+  rearTunnelGroup.add(new THREE.LineSegments(pulseLinesGeo, pulseLinesMat));
 
   const tunnelEndCap = new THREE.Mesh(
     new THREE.PlaneGeometry(tunnelSpan, tunnelSpan),
@@ -567,13 +583,9 @@ export function createRearTunnel(cyberArmorMat, maxAnisotropy = 4) {
     tunnelArmorMat.emissiveIntensity = (0.52 + 0.22 * Math.sin(t * 2.2)) * activityBoost;
     tunnelRailMat.opacity = Math.min(0.88, (0.38 + 0.16 * Math.sin(t * 2.6)) * activityBoost);
     tunnelMouthLight.intensity = 2.6 + activityBoost * 1.1 + Math.sin(t * 3.1) * 0.35;
-
-    for (let i = 0; i < pulseRings.length; i++) {
-      const pr = pulseRings[i];
-      const wave = Math.pow(0.5 + 0.5 * Math.sin(pr.normZ * Math.PI * 5.0 - t * pulseSpeed * 2.4), 4.0);
-      pr.frameMat.opacity = Math.min(0.95, pr.depthFade * (0.28 + wave * 0.68 * activityBoost));
-      pr.frameMat.color.setHex(wave > 0.62 ? 0x7dd3fc : (pr.isEven ? 0x38bdf8 : 0xa855f7));
-    }
+    pulseLinesMat.uniforms.uTime.value = t;
+    pulseLinesMat.uniforms.uPulseSpeed.value = pulseSpeed;
+    pulseLinesMat.uniforms.uBoost.value = activityBoost;
   }
 
   return { rearTunnelGroup, updateTunnel };

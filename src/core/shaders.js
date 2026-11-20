@@ -211,3 +211,86 @@ export function createGpuCloudMat(cloudOrbTex) {
     depthWrite: false,
   });
 }
+
+export function createCubeGlassMat() {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uBaseColor: { value: new THREE.Color(0xc4b5fd) },
+      uRimColor: { value: new THREE.Color(0x38bdf8) },
+    },
+    vertexShader: `
+      varying vec3 vNormalView;
+      varying vec3 vViewDir;
+      void main() {
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        vNormalView = normalize(normalMatrix * normal);
+        vViewDir = normalize(-mvPosition.xyz);
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uBaseColor;
+      uniform vec3 uRimColor;
+      varying vec3 vNormalView;
+      varying vec3 vViewDir;
+      void main() {
+        float ndotv = abs(dot(normalize(vNormalView), normalize(vViewDir)));
+        float fresnel = pow(1.0 - clamp(ndotv, 0.0, 1.0), 2.2);
+        vec3 col = mix(uBaseColor, uRimColor, fresnel * 0.85);
+        float alpha = 0.042 + fresnel * 0.14;
+        gl_FragColor = vec4(col, alpha);
+      }
+    `,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+}
+
+export function createTunnelPulseLinesMat(tunnelLen = 96) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uPulseSpeed: { value: 1.6 },
+      uBoost: { value: 1.0 },
+      uTunnelLen: { value: tunnelLen },
+      uColorCyan: { value: new THREE.Color(0x38bdf8) },
+      uColorHot: { value: new THREE.Color(0x7dd3fc) },
+      uColorViolet: { value: new THREE.Color(0xa855f7) },
+    },
+    vertexShader: `
+      attribute float aRingParity;
+      varying float vNormZ;
+      varying float vParity;
+      uniform float uTunnelLen;
+      void main() {
+        vNormZ = clamp(abs(position.z) / uTunnelLen, 0.0, 1.0);
+        vParity = aRingParity;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform float uTime;
+      uniform float uPulseSpeed;
+      uniform float uBoost;
+      uniform vec3 uColorCyan;
+      uniform vec3 uColorHot;
+      uniform vec3 uColorViolet;
+      varying float vNormZ;
+      varying float vParity;
+      void main() {
+        float depthFade = max(0.10, 1.0 - vNormZ * 0.92);
+        float wave = pow(0.5 + 0.5 * sin(vNormZ * 15.70796 - uTime * uPulseSpeed * 2.4), 4.0);
+        vec3 baseCol = mix(uColorCyan, uColorViolet, vParity);
+        vec3 col = mix(baseCol, uColorHot, smoothstep(0.55, 0.92, wave));
+        float alpha = min(0.95, depthFade * (0.28 + wave * 0.68 * uBoost));
+        gl_FragColor = vec4(col, alpha);
+      }
+    `,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+}
+

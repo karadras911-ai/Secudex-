@@ -23,6 +23,14 @@ export function createHudController({ state, onEnterStage, voicePlayer }) {
   const primaryBtn = document.getElementById('primary-action-btn');
   const pauseBtn = document.getElementById('pause-btn');
 
+  const perfWrapEl = document.getElementById('perf-diag-wrap');
+  const perfBtnEl = document.getElementById('perf-diag-btn');
+  const perfFpsPillEl = document.getElementById('perf-fps-pill');
+  const perfFpsEl = document.getElementById('perf-fps');
+  const perfCallsEl = document.getElementById('perf-calls');
+  const perfTrisEl = document.getElementById('perf-tris');
+  const perfDprEl = document.getElementById('perf-dpr');
+
   let selectedStepId = null;
 
   // Создаём 6 объёмных кнопок-этапов на верхней линейке
@@ -194,6 +202,25 @@ export function createHudController({ state, onEnterStage, voicePlayer }) {
     document.getElementById('audio-drawer-btn').textContent = muted ? 'Озвучка: Выкл' : 'Озвучка: Вкл';
   });
 
+  perfBtnEl?.addEventListener('click', () => {
+    const isOpen = perfWrapEl?.classList.toggle('open');
+    perfBtnEl.setAttribute('aria-expanded', String(Boolean(isOpen)));
+  });
+
+  let lastPerfKey = '';
+  function updatePerfStats({ fps, calls, triangles, dpr }) {
+    const fpsInt = Math.round(fps || 0);
+    const key = `${fpsInt}|${calls}|${triangles}|${dpr}`;
+    if (key === lastPerfKey) return;
+    lastPerfKey = key;
+
+    if (perfFpsPillEl) perfFpsPillEl.textContent = `FPS: ${fpsInt}`;
+    if (perfFpsEl) perfFpsEl.textContent = `${fpsInt}`;
+    if (perfCallsEl) perfCallsEl.textContent = `${calls}`;
+    if (perfTrisEl) perfTrisEl.textContent = Number(triangles || 0).toLocaleString('en-US');
+    if (perfDprEl) perfDprEl.textContent = `${Number(dpr || 1).toFixed(2)}x`;
+  }
+
   let lastBadgePct = -1;
   let lastBadgeThreats = -1;
 
@@ -208,5 +235,6 @@ export function createHudController({ state, onEnterStage, voicePlayer }) {
   return {
     syncUI,
     updateLiveBattery,
+    updatePerfStats,
   };
 }

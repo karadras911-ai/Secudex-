@@ -118,18 +118,40 @@ export function createPolarRelayRig(scene, camera, flagshipPos, flagshipRadius, 
   }));
   polarBeamHead.scale.setScalar(3.6);
 
-  const polarShockRings = [];
-  for (let r = 0; r < 5; r++) {
-    const sMat = new THREE.MeshBasicMaterial({
-      color: r % 2 === 0 ? 0xe0f2fe : 0x38bdf8, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
-    });
-    const sRing = new THREE.Mesh(new THREE.TorusGeometry(1.35, 0.055, 8, 32), sMat);
-    sRing.rotation.x = Math.PI / 2;
-    polarBeamGroup.add(sRing);
-    polarShockRings.push({ mesh: sRing, mat: sMat, phase: r / 5 });
+  const _ringDummy = new THREE.Object3D();
+  const _ringColor = new THREE.Color();
+
+  const shockRingCount = 5;
+  const shockRingMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  });
+  const polarShockRingsInst = new THREE.InstancedMesh(new THREE.TorusGeometry(1.35, 0.055, 8, 28), shockRingMat, shockRingCount);
+  polarShockRingsInst.frustumCulled = false;
+  for (let r = 0; r < shockRingCount; r++) {
+    _ringColor.setHex(r % 2 === 0 ? 0xe0f2fe : 0x38bdf8);
+    polarShockRingsInst.setColorAt(r, _ringColor);
   }
-  polarBeamGroup.add(polarCore, polarMid, polarOuter, polarFlareBase, polarBeamHead);
+  if (polarShockRingsInst.instanceColor) polarShockRingsInst.instanceColor.needsUpdate = true;
+  polarBeamGroup.add(polarCore, polarMid, polarOuter, polarFlareBase, polarBeamHead, polarShockRingsInst);
   scene.add(polarBeamGroup);
+
+  function updateShockRings(t, beamRiseH, opacityMul = 1.0) {
+    for (let r = 0; r < shockRingCount; r++) {
+      const rp = (t * 0.9 + r / shockRingCount) % 1;
+      const sc = 0.75 + Math.sin(rp * Math.PI) * 0.7;
+      _ringDummy.position.set(0, rp * beamRiseH, 0);
+      _ringDummy.rotation.set(Math.PI / 2, 0, 0);
+      _ringDummy.scale.set(sc, sc, 1);
+      _ringDummy.updateMatrix();
+      polarShockRingsInst.setMatrixAt(r, _ringDummy.matrix);
+
+      const alpha = Math.sin(rp * Math.PI) * 0.78 * opacityMul;
+      _ringColor.setHex(r % 2 === 0 ? 0xe0f2fe : 0x38bdf8).multiplyScalar(alpha);
+      polarShockRingsInst.setColorAt(r, _ringColor);
+    }
+    polarShockRingsInst.instanceMatrix.needsUpdate = true;
+    if (polarShockRingsInst.instanceColor) polarShockRingsInst.instanceColor.needsUpdate = true;
+  }
 
   const forwardBeamLen = 140.72;
   const polarForwardGroup = new THREE.Group();
@@ -158,17 +180,37 @@ export function createPolarRelayRig(scene, camera, flagshipPos, flagshipRadius, 
   }));
   polarTurnFlare.scale.setScalar(4.4);
 
-  const polarForwardRings = [];
-  for (let k = 0; k < 6; k++) {
-    const fRingMat = new THREE.MeshBasicMaterial({
-      color: k % 2 === 0 ? 0xe0f2fe : 0x38bdf8, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
-    });
-    const fRing = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.06, 8, 28), fRingMat);
-    polarForwardGroup.add(fRing);
-    polarForwardRings.push({ mesh: fRing, mat: fRingMat, phase: k / 6 });
+  const forwardRingCount = 6;
+  const forwardRingMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  });
+  const polarForwardRingsInst = new THREE.InstancedMesh(new THREE.TorusGeometry(1.15, 0.06, 8, 24), forwardRingMat, forwardRingCount);
+  polarForwardRingsInst.frustumCulled = false;
+  for (let k = 0; k < forwardRingCount; k++) {
+    _ringColor.setHex(k % 2 === 0 ? 0xe0f2fe : 0x38bdf8);
+    polarForwardRingsInst.setColorAt(k, _ringColor);
   }
-  polarForwardGroup.add(polarForwardCore, polarForwardOuter, polarTurnFlare);
+  if (polarForwardRingsInst.instanceColor) polarForwardRingsInst.instanceColor.needsUpdate = true;
+  polarForwardGroup.add(polarForwardCore, polarForwardOuter, polarTurnFlare, polarForwardRingsInst);
   scene.add(polarForwardGroup);
+
+  function updateForwardRings(t, fProg, fixedScale = null) {
+    for (let k = 0; k < forwardRingCount; k++) {
+      const rp = (t * 1.15 + k / forwardRingCount) % 1;
+      const sc = fixedScale !== null ? fixedScale : (0.7 + (1 - rp) * 0.85);
+      _ringDummy.position.set(0, 0, rp * forwardBeamLen);
+      _ringDummy.rotation.set(0, 0, 0);
+      _ringDummy.scale.setScalar(sc);
+      _ringDummy.updateMatrix();
+      polarForwardRingsInst.setMatrixAt(k, _ringDummy.matrix);
+
+      const alpha = fProg * Math.sin(rp * Math.PI) * 0.82;
+      _ringColor.setHex(k % 2 === 0 ? 0xe0f2fe : 0x38bdf8).multiplyScalar(alpha);
+      polarForwardRingsInst.setColorAt(k, _ringColor);
+    }
+    polarForwardRingsInst.instanceMatrix.needsUpdate = true;
+    if (polarForwardRingsInst.instanceColor) polarForwardRingsInst.instanceColor.needsUpdate = true;
+  }
 
   const lawyerWindow = createBlurredLawyerWindow(scene, maxAnisotropy);
 
@@ -206,13 +248,13 @@ export function createPolarRelayRig(scene, camera, flagshipPos, flagshipRadius, 
     polarMid,
     polarOuter,
     polarBeamHead,
-    polarShockRings,
+    updateShockRings,
     forwardBeamLen,
     polarForwardGroup,
     polarForwardCoreMat,
     polarForwardOuterMat,
     polarTurnFlare,
-    polarForwardRings,
+    updateForwardRings,
     lawyerWindow,
     speedStreaksGroup,
     streakGeo,

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CONTRACT_PAGES } from '../config/contractData.js';
 import { configureCrispTexture, createBeamFalloffTex, createCloudOrbTex, createScanGlowTex } from '../core/textures.js';
+import { prepareGeometry, mergePreparedGeometries } from '../core/geometryMerge.js';
 import { createGpuCloudMat } from '../core/shaders.js';
 import { getPagePairIndices } from '../stages/timelineMath.js';
 
@@ -250,15 +251,13 @@ export function createContractRig(scene, maxAnisotropy) {
   pageGeo.computeVertexNormals();
 
   // Текущий активный лист с шейдером сканирующей материализации в фазе подачи (uReveal)
-  const pageMat = new THREE.MeshPhysicalMaterial({
+  const pageMat = new THREE.MeshStandardMaterial({
     map: pageTextures[0],
     emissive: 0xf4efe4,
     emissiveMap: pageTextures[0],
     emissiveIntensity: 0.075,
     roughness: 0.96,
     metalness: 0.0,
-    clearcoat: 0.0,
-    sheen: 0.0,
     transparent: true,
     side: THREE.DoubleSide,
   });
@@ -288,76 +287,91 @@ export function createContractRig(scene, maxAnisotropy) {
   contractPivot.add(pageMesh);
 
   // Следующий заранее отрендеренный лист строго под текущим (чтобы при уходе текущего в архив не оставался пустой белый лист)
-  const nextPageMat = new THREE.MeshPhysicalMaterial({
+  const nextPageMat = new THREE.MeshStandardMaterial({
     map: pageTextures[1] || archiveCompleteTex,
     emissive: 0xf4efe4,
     emissiveMap: pageTextures[1] || archiveCompleteTex,
     emissiveIntensity: 0.07,
     roughness: 0.96,
     metalness: 0.0,
-    clearcoat: 0.0,
-    sheen: 0.0,
     side: THREE.DoubleSide,
   });
   const nextPageMesh = new THREE.Mesh(pageGeo, nextPageMat);
   nextPageMesh.position.set(0.006, -0.004, 0.048);
   contractPivot.add(nextPageMesh);
 
-  const stackShadowPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(2.28, 3.22),
-    new THREE.MeshBasicMaterial({ color: 0x05030a, transparent: true, opacity: 0.34, depthWrite: false })
-  );
-  stackShadowPlane.position.set(0.01, -0.01, 0.034);
-  contractPivot.add(stackShadowPlane);
-
   const stackEdgeMat = new THREE.MeshStandardMaterial({
-    map: pageEdgesTex, emissive: 0xd8d0be, emissiveIntensity: 0.08, roughness: 0.85, metalness: 0.02,
-  });
-  const stackBackPaperMat = new THREE.MeshStandardMaterial({
-    color: 0xd9d1c0, emissive: 0xd9d1c0, emissiveIntensity: 0.04, roughness: 0.90, metalness: 0.01,
+    color: 0xdad2c0, map: pageEdgesTex, emissive: 0xd8d0be, emissiveIntensity: 0.06, roughness: 0.85, metalness: 0.02,
   });
   const stackBlock = new THREE.Mesh(
     new THREE.BoxGeometry(2.26, 3.20, 0.20),
-    [stackEdgeMat, stackEdgeMat, stackEdgeMat, stackEdgeMat, stackBackPaperMat, stackBackPaperMat]
+    stackEdgeMat
   );
   stackBlock.position.set(0.02, -0.015, -0.06);
   contractPivot.add(stackBlock);
 
-  const fannedSheets = [];
-  const fannedPaperMat = new THREE.MeshStandardMaterial({
-    color: 0xeae3d4, emissive: 0xeae3d4, emissiveIntensity: 0.05, roughness: 0.88, metalness: 0.01, side: THREE.DoubleSide,
+  // Веер листов стопки объединён в 1 InstancedMesh с кромкой на GPU (1 draw call вместо 8)
+  const fannedMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff, emissive: 0xd8cfc0, emissiveIntensity: 0.045, roughness: 0.89, metalness: 0.01, side: THREE.DoubleSide,
   });
-  const fannedAccentMat = new THREE.MeshStandardMaterial({
-    color: 0xd8cfc0, emissive: 0xd8cfc0, emissiveIntensity: 0.04, roughness: 0.90, metalness: 0.01, side: THREE.DoubleSide,
-  });
-  const sheetRimMat = new THREE.LineBasicMaterial({ color: 0x64748b, transparent: true, opacity: 0.55 });
+  fannedMat.onBeforeCompile = (shader) => {
+    shader.vertexShader = 'varying vec2 vFanUv;\n' + shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      '#include <begin_vertex>\nvFanUv = uv;\n'
+    );
+    shader.fragmentShader = 'varying vec2 vFanUv;\n' + shader.fragmentShader.replace(
+      '#include <dithering_fragment>',
+      `
+      float fEdge = min(min(vFanUv.x, 1.0 - vFanUv.x), min(vFanUv.y, 1.0 - vFanUv.y));
+      float fRim = 1.0 - smoothstep(0.0, 0.012, fEdge);
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.39, 0.45, 0.55), fRim * 0.55);
+      #include <dithering_fragment>
+      `
+    );
+  };
+  const fannedSheetsInst = new THREE.InstancedMesh(new THREE.PlaneGeometry(2.25, 3.18), fannedMat, 4);
+  fannedSheetsInst.frustumCulled = false;
+  const _fanDummy = new THREE.Object3D();
+  const _fanColor = new THREE.Color();
   for (let s = 1; s <= 4; s++) {
-    const sheetGeo = new THREE.PlaneGeometry(2.25, 3.18);
-    const sheet = new THREE.Mesh(sheetGeo, s % 2 === 1 ? fannedPaperMat : fannedAccentMat);
-    sheet.add(new THREE.LineSegments(new THREE.EdgesGeometry(sheetGeo), sheetRimMat));
-    sheet.position.set(0.044 * s, -0.032 * s, -0.14 - 0.036 * s);
-    sheet.rotation.set(0, 0.018 * s, -0.014 * s);
-    contractPivot.add(sheet);
-    fannedSheets.push(sheet);
+    _fanDummy.position.set(0.044 * s, -0.032 * s, -0.14 - 0.036 * s);
+    _fanDummy.rotation.set(0, 0.018 * s, -0.014 * s);
+    _fanDummy.updateMatrix();
+    fannedSheetsInst.setMatrixAt(s - 1, _fanDummy.matrix);
+    _fanColor.setHex(s % 2 === 1 ? 0xeae3d4 : 0xd8cfc0);
+    fannedSheetsInst.setColorAt(s - 1, _fanColor);
   }
+  if (fannedSheetsInst.instanceColor) fannedSheetsInst.instanceColor.needsUpdate = true;
+  fannedSheetsInst.instanceMatrix.needsUpdate = true;
+  contractPivot.add(fannedSheetsInst);
 
-  const cyberChromeMat = new THREE.MeshPhysicalMaterial({
-    color: 0xcbd5e1, roughness: 0.15, metalness: 0.96, clearcoat: 0.7,
-  });
-  const electrodeGlowMat = new THREE.MeshStandardMaterial({
-    color: 0x67e8f9, emissive: 0x06b6d4, emissiveIntensity: 1.65, roughness: 0.15, metalness: 0.25,
-  });
+  // Зажим стопки (хром + неоновый индикатор) объединён в 1 Mesh с атрибутом aClampGlow
+  const clampBodyGeo = prepareGeometry(new THREE.BoxGeometry(0.14, 0.62, 0.30), null, 0xcbd5e1);
+  const clampGlowMat4 = new THREE.Matrix4().makeTranslation(-0.02, 0, 0);
+  const clampGlowGeo = prepareGeometry(new THREE.BoxGeometry(0.055, 0.44, 0.315), clampGlowMat4, 0x67e8f9);
+  const bodyGlowAttr = new Float32Array(clampBodyGeo.getAttribute('position').count);
+  const stripGlowAttr = new Float32Array(clampGlowGeo.getAttribute('position').count).fill(1.0);
+  const mergedClampGeo = mergePreparedGeometries([clampBodyGeo, clampGlowGeo]);
+  const combinedGlowAttr = new Float32Array(bodyGlowAttr.length + stripGlowAttr.length);
+  combinedGlowAttr.set(bodyGlowAttr, 0);
+  combinedGlowAttr.set(stripGlowAttr, bodyGlowAttr.length);
+  mergedClampGeo.setAttribute('aClampGlow', new THREE.BufferAttribute(combinedGlowAttr, 1));
 
-  const clampClip = new THREE.Group();
+  const clampMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff, vertexColors: true, roughness: 0.16, metalness: 0.94,
+  });
+  clampMat.onBeforeCompile = (shader) => {
+    shader.vertexShader = 'attribute float aClampGlow;\nvarying float vClampGlow;\n' + shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      '#include <begin_vertex>\nvClampGlow = aClampGlow;\n'
+    );
+    shader.fragmentShader = 'varying float vClampGlow;\n' + shader.fragmentShader.replace(
+      '#include <emissivemap_fragment>',
+      '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(0.024, 0.714, 0.831) * (1.65 * vClampGlow);\n'
+    );
+  };
+  const clampClip = new THREE.Mesh(mergedClampGeo, clampMat);
   clampClip.position.set(-1.11, 1.06, -0.02);
-  clampClip.add(
-    new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.62, 0.30), cyberChromeMat),
-    (() => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.44, 0.315), electrodeGlowMat);
-      m.position.x = -0.02;
-      return m;
-    })()
-  );
   contractPivot.add(clampClip);
 
   // Перелистывание внутри стопки с GPU vertex-bend шейдером изгиба вокруг левого зажима
@@ -368,7 +382,7 @@ export function createContractRig(scene, maxAnisotropy) {
   const flipLeaves = [];
   for (let l = 0; l < 3; l++) {
     const initTex = pageTextures[l % pageTextures.length];
-    const fMat = new THREE.MeshPhysicalMaterial({
+    const fMat = new THREE.MeshStandardMaterial({
       map: initTex,
       emissive: 0xf4efe4,
       emissiveMap: initTex,
@@ -416,48 +430,102 @@ export function createContractRig(scene, maxAnisotropy) {
   }
   contractPivot.add(flipSheetGroup);
 
-  // Складывающийся в 3 створки уходящий лист (передаём текстуру текущей страницы)
+  // Складывающийся в 3 створки уходящий лист в 1 draw call (GPU-шарниры боковых створок)
   const archivedSheetGroup = new THREE.Group();
   archivedSheetGroup.visible = false;
   const foldVertWrap = new THREE.Group();
   archivedSheetGroup.add(foldVertWrap);
 
-  function makeFoldPanel(panelW, uMin, uMax, offsetX) {
+  function buildFoldStripGeo(panelW, uMin, uMax, centerX) {
     const geo = new THREE.PlaneGeometry(panelW, 3.14, 1, 1);
     const uv = geo.attributes.uv;
     for (let i = 0; i < uv.count; i++) {
       uv.setX(i, uMin + uv.getX(i) * (uMax - uMin));
     }
-    geo.translate(offsetX, 0, 0);
-    const mat = new THREE.MeshPhysicalMaterial({
-      map: pageTextures[0],
-      emissive: 0x38bdf8,
-      emissiveIntensity: 0.14,
-      roughness: 0.78,
-      metalness: 0.04,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.96,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    const rimMat = new THREE.LineBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.72 });
-    mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), rimMat));
-    return { mesh, mat, rimMat };
+    return prepareGeometry(geo, new THREE.Matrix4().makeTranslation(centerX, 0, 0));
   }
 
-  const foldCenterPanel = makeFoldPanel(0.76, 1 / 3, 2 / 3, 0);
-  const foldLeftWing = new THREE.Group();
-  foldLeftWing.position.set(-0.38, 0, 0);
-  const foldLeftPanel = makeFoldPanel(0.75, 0, 1 / 3, -0.375);
-  foldLeftWing.add(foldLeftPanel.mesh);
+  const foldLeftGeo = buildFoldStripGeo(0.75, 0, 1 / 3, -0.755);
+  const foldCenterGeo = buildFoldStripGeo(0.76, 1 / 3, 2 / 3, 0);
+  const foldRightGeo = buildFoldStripGeo(0.75, 2 / 3, 1, 0.755);
+  const cL = foldLeftGeo.getAttribute('position').count;
+  const cC = foldCenterGeo.getAttribute('position').count;
+  const cR = foldRightGeo.getAttribute('position').count;
+  const foldMergedGeo = mergePreparedGeometries([foldLeftGeo, foldCenterGeo, foldRightGeo]);
+  const aWingArr = new Float32Array(cL + cC + cR);
+  aWingArr.fill(-1.0, 0, cL);
+  aWingArr.fill(0.0, cL, cL + cC);
+  aWingArr.fill(1.0, cL + cC, cL + cC + cR);
+  foldMergedGeo.setAttribute('aWing', new THREE.BufferAttribute(aWingArr, 1));
 
-  const foldRightWing = new THREE.Group();
-  foldRightWing.position.set(0.38, 0, 0);
-  const foldRightPanel = makeFoldPanel(0.75, 2 / 3, 1, 0.375);
-  foldRightWing.add(foldRightPanel.mesh);
-
-  foldVertWrap.add(foldCenterPanel.mesh, foldLeftWing, foldRightWing);
+  const archivedSheetMat = new THREE.MeshStandardMaterial({
+    map: pageTextures[0],
+    emissive: 0x38bdf8,
+    emissiveIntensity: 0.14,
+    roughness: 0.78,
+    metalness: 0.04,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.96,
+  });
+  archivedSheetMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uFoldAngle = { value: 0 };
+    shader.uniforms.uRimOpacity = { value: 0.72 };
+    archivedSheetMat.userData.shader = shader;
+    shader.vertexShader = 'attribute float aWing;\nuniform float uFoldAngle;\nvarying vec2 vFoldUv;\n' + shader.vertexShader
+      .replace(
+        '#include <beginnormal_vertex>',
+        `
+        #include <beginnormal_vertex>
+        if (abs(aWing) > 0.5) {
+          float thN = -aWing * uFoldAngle;
+          float cN = cos(thN);
+          float sN = sin(thN);
+          float nx = objectNormal.x * cN + objectNormal.z * sN;
+          float nz = -objectNormal.x * sN + objectNormal.z * cN;
+          objectNormal.x = nx;
+          objectNormal.z = nz;
+        }
+        `
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `
+        #include <begin_vertex>
+        vFoldUv = uv;
+        if (abs(aWing) > 0.5) {
+          float hingeX = aWing * 0.38;
+          float th = -aWing * uFoldAngle;
+          float c = cos(th);
+          float s = sin(th);
+          float dx = transformed.x - hingeX;
+          float dz = transformed.z;
+          transformed.x = hingeX + dx * c + dz * s;
+          transformed.z = -dx * s + dz * c;
+        }
+        `
+      );
+    shader.fragmentShader = 'uniform float uRimOpacity;\nvarying vec2 vFoldUv;\n' + shader.fragmentShader.replace(
+      '#include <dithering_fragment>',
+      `
+      float rimDist = min(min(vFoldUv.x, 1.0 - vFoldUv.x), min(vFoldUv.y, 1.0 - vFoldUv.y));
+      float rimFactor = (1.0 - smoothstep(0.0, 0.016, rimDist)) * uRimOpacity;
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.49, 0.83, 0.99), rimFactor);
+      #include <dithering_fragment>
+      `
+    );
+  };
+  const archivedSheetMesh = new THREE.Mesh(foldMergedGeo, archivedSheetMat);
+  foldVertWrap.add(archivedSheetMesh);
   scene.add(archivedSheetGroup);
+
+  function setFoldState(foldAngle, sheetAlpha) {
+    archivedSheetMat.opacity = sheetAlpha;
+    if (archivedSheetMat.userData.shader) {
+      archivedSheetMat.userData.shader.uniforms.uFoldAngle.value = foldAngle;
+      archivedSheetMat.userData.shader.uniforms.uRimOpacity.value = sheetAlpha * 0.78;
+    }
+  }
 
   function setPagePair(pageIndex) {
     const { currentIdx, nextIdx, hasNext } = getPagePairIndices(pageIndex, CONTRACT_PAGES.length);
@@ -473,10 +541,8 @@ export function createContractRig(scene, maxAnisotropy) {
     nextPageMat.needsUpdate = true;
     nextPageMesh.visible = true;
 
-    [foldCenterPanel, foldLeftPanel, foldRightPanel].forEach(p => {
-      p.mat.map = curTex;
-      p.mat.needsUpdate = true;
-    });
+    archivedSheetMat.map = curTex;
+    archivedSheetMat.needsUpdate = true;
 
     flipLeaves.forEach((leaf, idx) => {
       const texForLeaf = idx === 0 ? curTex : (idx === 1 ? nxtTex : pageTextures[(currentIdx + 2) % pageTextures.length]);
@@ -485,9 +551,7 @@ export function createContractRig(scene, maxAnisotropy) {
       leaf.material.needsUpdate = true;
     });
 
-    fannedSheets.forEach((sh, sIdx) => {
-      sh.visible = sIdx < CONTRACT_PAGES.length - 1 - currentIdx + 1;
-    });
+    fannedSheetsInst.count = Math.max(0, Math.min(4, CONTRACT_PAGES.length - currentIdx));
   }
   setPagePair(0);
 
@@ -556,14 +620,17 @@ export function createContractRig(scene, maxAnisotropy) {
     color: 0xe0f2fe, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false,
   });
   const scanSwath = new THREE.Mesh(new THREE.PlaneGeometry(2.34, 0.34), scanBarMat);
-  const scanLaserLine = new THREE.Mesh(new THREE.PlaneGeometry(2.28, 0.028), scanCoreMat);
-  scanLaserLine.position.z = 0.005;
+  const laserLineGeo = new THREE.PlaneGeometry(2.28, 0.028);
   const bracketGeo = new THREE.BoxGeometry(0.06, 0.22, 0.025);
-  const leftBracket = new THREE.Mesh(bracketGeo, scanCoreMat);
-  leftBracket.position.set(-1.14, 0, 0.01);
-  const rightBracket = new THREE.Mesh(bracketGeo, scanCoreMat);
-  rightBracket.position.set(1.14, 0, 0.01);
-  scanBar.add(scanSwath, scanLaserLine, leftBracket, rightBracket);
+  const scanCoreMergedGeo = mergePreparedGeometries([
+    prepareGeometry(laserLineGeo, new THREE.Matrix4().makeTranslation(0, 0, 0.005)),
+    prepareGeometry(bracketGeo, new THREE.Matrix4().makeTranslation(-1.14, 0, 0.01)),
+    prepareGeometry(bracketGeo, new THREE.Matrix4().makeTranslation(1.14, 0, 0.01)),
+  ]);
+  laserLineGeo.dispose();
+  bracketGeo.dispose();
+  const scanCoreMesh = new THREE.Mesh(scanCoreMergedGeo, scanCoreMat);
+  scanBar.add(scanSwath, scanCoreMesh);
   scanBar.position.z = 0.075;
   pageMesh.add(scanBar);
 
@@ -608,16 +675,14 @@ export function createContractRig(scene, maxAnisotropy) {
     pageMesh,
     pageMat,
     nextPageMesh,
-    fannedSheets,
+    fannedSheetsInst,
     setPagePair,
     setPageReveal,
     flipSheetGroup,
     flipLeaves,
     archivedSheetGroup,
     foldVertWrap,
-    foldLeftWing,
-    foldRightWing,
-    foldPanels: [foldCenterPanel, foldLeftPanel, foldRightPanel],
+    setFoldState,
     ufoBeamGroup,
     ufoBeamOuterMat,
     ufoBeamInnerMat,

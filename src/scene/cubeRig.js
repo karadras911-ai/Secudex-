@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { CUBE_SIZE, CUBE_HALF } from '../config/constants.js';
 import { configureCrispTexture, heightCanvasToNormalTex } from '../core/textures.js';
+import { prepareGeometry, mergePreparedGeometries } from '../core/geometryMerge.js';
+import { createCubeGlassMat } from '../core/shaders.js';
 import { createRearTunnel } from './environment.js';
 
 function createCubeReactorMaps(maxAnisotropy) {
@@ -129,17 +131,12 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
   const cubeReactorMaps = createCubeReactorMaps(maxAnisotropy);
   const portalFieldTex = createPortalFieldTex(maxAnisotropy);
 
-  const darkPurpleBeamMat = new THREE.MeshPhysicalMaterial({
-    color: 0x260c47, roughness: 0.26, metalness: 0.91,
-    normalMap: metalNormalTex, normalScale: new THREE.Vector2(0.55, 0.55),
-    roughnessMap: metalTex, clearcoat: 0.4, clearcoatRoughness: 0.22, envMapIntensity: 1.5,
-  });
-  const cyberArmorMat = new THREE.MeshPhysicalMaterial({
-    color: 0x150929, roughness: 0.32, metalness: 0.9,
+  const cyberArmorMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff, vertexColors: true, roughness: 0.32, metalness: 0.9,
     normalMap: metalNormalTex, normalScale: new THREE.Vector2(0.65, 0.65),
-    roughnessMap: metalTex, clearcoat: 0.34, clearcoatRoughness: 0.26, envMapIntensity: 1.45,
+    roughnessMap: metalTex, envMapIntensity: 1.45,
   });
-  const cubeReactorArmorMat = new THREE.MeshPhysicalMaterial({
+  const cubeReactorArmorMat = new THREE.MeshStandardMaterial({
     color: 0xffffff,
     map: cubeReactorMaps.colorTex,
     normalMap: cubeReactorMaps.normalTex,
@@ -147,17 +144,15 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
     roughnessMap: cubeReactorMaps.roughTex,
     roughness: 0.34,
     metalness: 0.9,
-    clearcoat: 0.45,
-    clearcoatRoughness: 0.2,
     envMapIntensity: 1.55,
     emissive: 0xffffff,
     emissiveMap: cubeReactorMaps.emissiveTex,
     emissiveIntensity: 0.95,
   });
-  const cyberChromeMat = new THREE.MeshPhysicalMaterial({
+  const cyberChromeMat = new THREE.MeshStandardMaterial({
     color: 0xcbd5e1, roughness: 0.15, metalness: 0.96,
     normalMap: metalNormalTex, normalScale: new THREE.Vector2(0.35, 0.35),
-    roughnessMap: metalTex, clearcoat: 0.7, clearcoatRoughness: 0.12, envMapIntensity: 1.7,
+    roughnessMap: metalTex, envMapIntensity: 1.7,
   });
   const violetAccentMat = new THREE.MeshStandardMaterial({
     color: 0x7c3aed, emissive: 0x5b21b6, emissiveIntensity: 0.95, roughness: 0.2, metalness: 0.9,
@@ -165,8 +160,20 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
   const electrodeGlowMat = new THREE.MeshStandardMaterial({
     color: 0x67e8f9, emissive: 0x06b6d4, emissiveIntensity: 1.65, roughness: 0.15, metalness: 0.25,
   });
+  const glassMat = createCubeGlassMat();
+  const staticLineMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.46 });
 
-  const cyberCoils = [];
+  // Сборник статической геометрии куба для объединения по материалам (снижение Draw Calls)
+  const staticRoot = new THREE.Group();
+  const matBuckets = new Map([
+    [cyberArmorMat, []],
+    [cubeReactorArmorMat, []],
+    [cyberChromeMat, []],
+    [violetAccentMat, []],
+    [electrodeGlowMat, []],
+    [glassMat, []],
+  ]);
+  const lineGeosToMerge = [];
 
   const beamDirs = [
     { p: [-half, 0, -half], r: [0, 0, 0] }, { p: [half, 0, -half], r: [0, 0, 0] },
@@ -183,12 +190,18 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
   const railGeo = new THREE.CylinderGeometry(0.017, 0.017, CUBE_SIZE - 0.48, 8);
   const finGeo = new THREE.BoxGeometry(0.32, 0.028, 0.32);
   const bushingGeo = new THREE.CylinderGeometry(0.068, 0.09, 0.11, 8);
+  const collarGeo = new THREE.CylinderGeometry(0.055, 0.055, 0.03, 8);
   const tipConeGeo = new THREE.ConeGeometry(0.032, 0.16, 8);
+  const centerLockGeo = new THREE.BoxGeometry(0.34, 0.34, 0.34);
+  const centerChromeGeo = new THREE.BoxGeometry(0.36, 0.16, 0.36);
+  const centerPlasmaGeo = new THREE.BoxGeometry(0.37, 0.048, 0.37);
 
   beamDirs.forEach(d => {
     const beamGroup = new THREE.Group();
+    const barMesh = new THREE.Mesh(barGeo, cyberArmorMat);
+    barMesh.userData.vColor = 0x260c47;
     beamGroup.add(
-      new THREE.Mesh(barGeo, darkPurpleBeamMat),
+      barMesh,
       new THREE.Mesh(stripGeo1, violetAccentMat),
       new THREE.Mesh(stripGeo2, violetAccentMat)
     );
@@ -202,10 +215,11 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
       fin.position.y = fy;
       beamGroup.add(fin);
     });
-    const centerLock = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.34), cyberArmorMat);
-    const centerChrome = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.16, 0.36), cyberChromeMat);
-    const centerPlasma = new THREE.Mesh(new THREE.BoxGeometry(0.37, 0.048, 0.37), electrodeGlowMat);
-    beamGroup.add(centerLock, centerChrome, centerPlasma);
+    beamGroup.add(
+      new THREE.Mesh(centerLockGeo, cyberArmorMat),
+      new THREE.Mesh(centerChromeGeo, cyberChromeMat),
+      new THREE.Mesh(centerPlasmaGeo, electrodeGlowMat)
+    );
     [[-0.14, -0.14], [0.14, 0.14], [-0.14, 0.14], [0.14, -0.14]].forEach(([ox, oz]) => {
       const rail = new THREE.Mesh(railGeo, cyberChromeMat);
       rail.position.set(ox, 0, oz);
@@ -213,7 +227,7 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
     });
     beamGroup.position.set(...d.p);
     beamGroup.rotation.set(...d.r);
-    cubeGroup.add(beamGroup);
+    staticRoot.add(beamGroup);
 
     [-1.12, 0, 1.12].forEach((along) => {
       const worldPt = new THREE.Vector3(0, along, 0).applyEuler(beamGroup.rotation).add(beamGroup.position);
@@ -223,40 +237,49 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
       edgeNode.quaternion.setFromUnitVectors(up, inward);
       const bushing = new THREE.Mesh(bushingGeo, cyberArmorMat);
       bushing.position.y = 0.12;
-      const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.03, 8), cyberChromeMat);
+      const collar = new THREE.Mesh(collarGeo, cyberChromeMat);
       collar.position.y = 0.19;
       const tip = new THREE.Mesh(tipConeGeo, electrodeGlowMat);
       tip.position.y = 0.27;
       edgeNode.add(bushing, collar, tip);
-      cubeGroup.add(edgeNode);
+      staticRoot.add(edgeNode);
     });
   });
+
+  const cCoreGeo = new THREE.BoxGeometry(0.46, 0.46, 0.46);
+  const cBar1 = new THREE.BoxGeometry(0.50, 0.18, 0.50);
+  const cBar2 = new THREE.BoxGeometry(0.18, 0.50, 0.50);
+  const cBar3 = new THREE.BoxGeometry(0.50, 0.50, 0.18);
+  const cOctGeo = new THREE.OctahedronGeometry(0.28, 0);
+  const pinBaseGeo = new THREE.CylinderGeometry(0.068, 0.095, 0.15, 8);
+  const pinRingGeo = new THREE.TorusGeometry(0.065, 0.014, 6, 16);
+  const pinGlowGeo = new THREE.SphereGeometry(0.048, 10, 10);
 
   for (const x of [-half, half]) {
     for (const y of [-half, half]) {
       for (const z of [-half, half]) {
         const node = new THREE.Group();
         node.add(
-          new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.46, 0.46), cubeReactorArmorMat),
-          new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.18, 0.50), cyberChromeMat),
-          new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.50, 0.50), cyberArmorMat),
-          new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.50, 0.18), cyberArmorMat),
-          new THREE.Mesh(new THREE.OctahedronGeometry(0.28, 0), violetAccentMat)
+          new THREE.Mesh(cCoreGeo, cubeReactorArmorMat),
+          new THREE.Mesh(cBar1, cyberChromeMat),
+          new THREE.Mesh(cBar2, cyberArmorMat),
+          new THREE.Mesh(cBar3, cyberArmorMat),
+          new THREE.Mesh(cOctGeo, violetAccentMat)
         );
         const inward = new THREE.Vector3(-x, -y, -z).normalize();
         const cornerPin = new THREE.Group();
         cornerPin.quaternion.setFromUnitVectors(up, inward);
-        const pinBase = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.095, 0.15, 8), cyberChromeMat);
+        const pinBase = new THREE.Mesh(pinBaseGeo, cyberChromeMat);
         pinBase.position.y = 0.27;
-        const pinRing = new THREE.Mesh(new THREE.TorusGeometry(0.065, 0.014, 6, 16), electrodeGlowMat);
+        const pinRing = new THREE.Mesh(pinRingGeo, electrodeGlowMat);
         pinRing.rotation.x = Math.PI / 2;
         pinRing.position.y = 0.34;
-        const pinGlow = new THREE.Mesh(new THREE.SphereGeometry(0.048, 10, 10), electrodeGlowMat);
+        const pinGlow = new THREE.Mesh(pinGlowGeo, electrodeGlowMat);
         pinGlow.position.y = 0.39;
         cornerPin.add(pinBase, pinRing, pinGlow);
         node.add(cornerPin);
         node.position.set(x, y, z);
-        cubeGroup.add(node);
+        staticRoot.add(node);
       }
     }
   }
@@ -276,18 +299,20 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
   pedRim.rotation.y = Math.PI / 8;
   pedRim.position.y = -0.46;
   pedestalGroup.add(pedUpper, pedGlowRing, pedLower, pedRim);
+  const strutGeo = new THREE.BoxGeometry(0.68, 0.34, 0.18);
+  const finTipGeo = new THREE.BoxGeometry(0.14, 0.24, 0.22);
   for (let k = 0; k < 8; k++) {
     const ang = (k / 8) * Math.PI * 2 + Math.PI / 8;
     const fin = new THREE.Group();
     fin.position.set(Math.cos(ang) * 2.95, -0.26, Math.sin(ang) * 2.95);
     fin.rotation.y = -ang;
-    const strut = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.34, 0.18), cyberChromeMat);
-    const finTip = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.24, 0.22), violetAccentMat);
+    const strut = new THREE.Mesh(strutGeo, cyberChromeMat);
+    const finTip = new THREE.Mesh(finTipGeo, violetAccentMat);
     finTip.position.x = 0.28;
     fin.add(strut, finTip);
     pedestalGroup.add(fin);
   }
-  cubeGroup.add(pedestalGroup);
+  staticRoot.add(pedestalGroup);
 
   const floorPadRing = new THREE.Mesh(new THREE.TorusGeometry(1.45, 0.028, 8, 48), cyberChromeMat);
   floorPadRing.rotation.x = Math.PI / 2;
@@ -295,13 +320,9 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
   const floorPadGlow = new THREE.Mesh(new THREE.TorusGeometry(1.18, 0.016, 8, 48), electrodeGlowMat);
   floorPadGlow.rotation.x = Math.PI / 2;
   floorPadGlow.position.y = -half + 0.075;
-  cubeGroup.add(floorPadRing, floorPadGlow);
+  staticRoot.add(floorPadRing, floorPadGlow);
 
-  const glassMat = new THREE.MeshPhysicalMaterial({
-    color: 0xd8b4fe, transparent: true, opacity: 0.075,
-    roughness: 0.06, metalness: 0.05, clearcoat: 1.0, clearcoatRoughness: 0.05,
-    depthWrite: false, side: THREE.DoubleSide,
-  });
+  // Полупрозрачные стёкла куба с лёгким Fresnel-шейдером вместо heavy MeshPhysicalMaterial (объединены в 1 draw call)
   const glassPlaneGeo = new THREE.PlaneGeometry(CUBE_SIZE - 0.16, CUBE_SIZE - 0.16);
   [
     { pos: [0, 0, half - 0.04], rot: [0, 0, 0] },
@@ -313,15 +334,15 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
     const pane = new THREE.Mesh(glassPlaneGeo, glassMat);
     pane.position.set(...cfg.pos);
     pane.rotation.set(...cfg.rot);
-    cubeGroup.add(pane);
+    staticRoot.add(pane);
   });
-  cubeGroup.add(new THREE.LineSegments(
+  staticRoot.add(new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.BoxGeometry(CUBE_SIZE - 0.14, CUBE_SIZE - 0.14, CUBE_SIZE - 0.14)),
-    new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.48 })
+    staticLineMat
   ));
 
-  const backWallGroup = new THREE.Group();
-  backWallGroup.position.set(0, 0, -half + 0.05);
+  const backWallStatic = new THREE.Group();
+  backWallStatic.position.set(0, 0, -half + 0.05);
   const bwTop = new THREE.Mesh(new THREE.BoxGeometry(CUBE_SIZE - 0.14, 0.52, 0.16), cubeReactorArmorMat);
   bwTop.position.y = (CUBE_SIZE - 0.14) / 2 - 0.26;
   const bwBottom = new THREE.Mesh(new THREE.BoxGeometry(CUBE_SIZE - 0.14, 0.52, 0.16), cubeReactorArmorMat);
@@ -330,125 +351,68 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
   bwLeft.position.x = -(CUBE_SIZE - 0.14) / 2 + 0.26;
   const bwRight = new THREE.Mesh(new THREE.BoxGeometry(0.52, CUBE_SIZE - 1.18, 0.16), cubeReactorArmorMat);
   bwRight.position.x = (CUBE_SIZE - 0.14) / 2 - 0.26;
-  backWallGroup.add(bwTop, bwBottom, bwLeft, bwRight);
+  backWallStatic.add(bwTop, bwBottom, bwLeft, bwRight);
 
+  const bwRibGeo = new THREE.BoxGeometry(0.11, CUBE_SIZE - 0.28, 0.22);
   [-1.68, 1.68].forEach(bx => {
-    const rib = new THREE.Mesh(new THREE.BoxGeometry(0.11, CUBE_SIZE - 0.28, 0.22), cyberChromeMat);
+    const rib = new THREE.Mesh(bwRibGeo, cyberChromeMat);
     rib.position.x = bx;
-    backWallGroup.add(rib);
+    backWallStatic.add(rib);
   });
+  const bwHBeamGeo = new THREE.BoxGeometry(CUBE_SIZE - 0.28, 0.16, 0.22);
+  const bwHGlowGeo = new THREE.BoxGeometry(3.2, 0.032, 0.24);
   [-1.82, 1.82].forEach(by => {
-    const hBeam = new THREE.Mesh(new THREE.BoxGeometry(CUBE_SIZE - 0.28, 0.16, 0.22), cyberArmorMat);
+    const hBeam = new THREE.Mesh(bwHBeamGeo, cyberArmorMat);
     hBeam.position.y = by;
-    const hGlow = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.032, 0.24), electrodeGlowMat);
+    const hGlow = new THREE.Mesh(bwHGlowGeo, electrodeGlowMat);
     hGlow.position.y = by;
-    backWallGroup.add(hBeam, hGlow);
+    backWallStatic.add(hBeam, hGlow);
   });
+  const bwRollerGeo = new THREE.CylinderGeometry(0.05, 0.05, 3.24, 10);
   [-1.58, 1.58].forEach(rx => {
-    const feedRoller = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.24, 10), electrodeGlowMat);
+    const feedRoller = new THREE.Mesh(bwRollerGeo, electrodeGlowMat);
     feedRoller.position.set(rx, 0, 0.11);
-    backWallGroup.add(feedRoller);
+    backWallStatic.add(feedRoller);
   });
+  staticRoot.add(backWallStatic);
+
   const portalGlowMat = new THREE.MeshBasicMaterial({
     map: portalFieldTex, color: 0xbae6fd, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false,
   });
   const portalSlot = new THREE.Mesh(new THREE.PlaneGeometry(3.12, 3.12), portalGlowMat);
-  portalSlot.position.z = 0.08;
-  backWallGroup.add(portalSlot);
+  portalSlot.position.set(0, 0, -half + 0.13);
+  cubeGroup.add(portalSlot);
+
   const rearTunnel = createRearTunnel(cyberArmorMat, maxAnisotropy);
-  backWallGroup.add(rearTunnel.rearTunnelGroup);
-  cubeGroup.add(backWallGroup);
+  rearTunnel.rearTunnelGroup.position.set(0, 0, -half + 0.05);
+  cubeGroup.add(rearTunnel.rearTunnelGroup);
 
-  function buildFaceElectrodeAssembly(hasCenterEmitter) {
-    const fGroup = new THREE.Group();
-    const cOff = 1.56;
-    [[-cOff, cOff], [cOff, cOff], [-cOff, -cOff], [cOff, -cOff]].forEach(([ex, ey]) => {
-      const mod = new THREE.Group();
-      mod.position.set(ex, ey, 0);
-      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.44, 0.06), cubeReactorArmorMat);
-      const flange = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.19, 0.08, 6), cyberChromeMat);
-      flange.rotation.x = Math.PI / 2;
-      const insulator = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.12, 0.1, 12), cyberArmorMat);
-      insulator.rotation.x = Math.PI / 2;
-      insulator.position.z = -0.05;
-      const outerCap = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.075, 0.06, 6), electrodeGlowMat);
-      outerCap.rotation.x = Math.PI / 2;
-      outerCap.position.z = 0.06;
-      [-0.045, 0.045].forEach(px => {
-        const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.024, 0.22, 8), cyberChromeMat);
-        rod.rotation.x = Math.PI / 2;
-        rod.position.set(px, 0, -0.15);
-        const tip = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 8), electrodeGlowMat);
-        tip.position.set(px, 0, -0.27);
-        mod.add(rod, tip);
-      });
-      mod.add(plate, flange, insulator, outerCap);
-      fGroup.add(mod);
-    });
+  const fPlateGeo = new THREE.BoxGeometry(0.44, 0.44, 0.06);
+  const fFlangeGeo = new THREE.CylinderGeometry(0.16, 0.19, 0.08, 6);
+  const fInsGeo = new THREE.CylinderGeometry(0.10, 0.12, 0.1, 12);
+  const fOuterCapGeo = new THREE.CylinderGeometry(0.055, 0.075, 0.06, 6);
+  const fRodGeo = new THREE.CylinderGeometry(0.015, 0.024, 0.22, 8);
+  const fTipGeo = new THREE.SphereGeometry(0.028, 8, 8);
+  const fCapBlockGeo = new THREE.BoxGeometry(0.48, 0.12, 0.1);
+  const fBusGlowGeo = new THREE.BoxGeometry(0.34, 0.03, 0.115);
+  const fPinGeo = new THREE.ConeGeometry(0.026, 0.16, 8);
+  const fPodGeo = new THREE.BoxGeometry(0.24, 1.45, 0.14);
+  const fPodTrimGeo = new THREE.BoxGeometry(0.06, 1.25, 0.165);
+  const fPodPipeGeo = new THREE.CylinderGeometry(0.022, 0.022, 1.68, 8);
 
-    const tracePts = [
-      new THREE.Vector3(-1.82, 1.82, 0), new THREE.Vector3(-1.56, 1.56, 0),
-      new THREE.Vector3(1.82, 1.82, 0), new THREE.Vector3(1.56, 1.56, 0),
-      new THREE.Vector3(-1.82, -1.82, 0), new THREE.Vector3(-1.56, -1.56, 0),
-      new THREE.Vector3(1.82, -1.82, 0), new THREE.Vector3(1.56, -1.56, 0),
-      new THREE.Vector3(-1.56, 1.56, 0), new THREE.Vector3(1.56, 1.56, 0),
-      new THREE.Vector3(-1.56, -1.56, 0), new THREE.Vector3(1.56, -1.56, 0),
-      new THREE.Vector3(-1.56, 1.56, 0), new THREE.Vector3(-1.56, -1.56, 0),
-      new THREE.Vector3(1.56, 1.56, 0), new THREE.Vector3(1.56, -1.56, 0),
-    ];
-    fGroup.add(new THREE.LineSegments(
-      new THREE.BufferGeometry().setFromPoints(tracePts),
-      new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.38 })
-    ));
+  const tracePts = [
+    new THREE.Vector3(-1.82, 1.82, 0), new THREE.Vector3(-1.56, 1.56, 0),
+    new THREE.Vector3(1.82, 1.82, 0), new THREE.Vector3(1.56, 1.56, 0),
+    new THREE.Vector3(-1.82, -1.82, 0), new THREE.Vector3(-1.56, -1.56, 0),
+    new THREE.Vector3(1.82, -1.82, 0), new THREE.Vector3(1.56, -1.56, 0),
+    new THREE.Vector3(-1.56, 1.56, 0), new THREE.Vector3(1.56, 1.56, 0),
+    new THREE.Vector3(-1.56, -1.56, 0), new THREE.Vector3(1.56, -1.56, 0),
+    new THREE.Vector3(-1.56, 1.56, 0), new THREE.Vector3(-1.56, -1.56, 0),
+    new THREE.Vector3(1.56, 1.56, 0), new THREE.Vector3(1.56, -1.56, 0),
+  ];
+  const traceGeo = new THREE.BufferGeometry().setFromPoints(tracePts);
 
-    [-0.74, 0.74].forEach(bx => {
-      [-1.78, 1.78].forEach(by => {
-        const capBlock = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.12, 0.1), cyberArmorMat);
-        capBlock.position.set(bx, by, 0);
-        const busGlow = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.03, 0.115), electrodeGlowMat);
-        busGlow.position.set(bx, by, 0);
-        const pin = new THREE.Mesh(new THREE.ConeGeometry(0.026, 0.16, 8), electrodeGlowMat);
-        pin.rotation.x = -Math.PI / 2;
-        pin.position.set(bx, by, -0.1);
-        fGroup.add(capBlock, busGlow, pin);
-      });
-    });
-
-    if (hasCenterEmitter) {
-      [-1.42, 1.42].forEach(mx => {
-        const pod = new THREE.Mesh(new THREE.BoxGeometry(0.24, 1.45, 0.14), cubeReactorArmorMat);
-        pod.position.set(mx, 0, 0);
-        const podTrim = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.25, 0.165), violetAccentMat);
-        podTrim.position.set(mx, 0, 0);
-        const podPipe = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 1.68, 8), cyberChromeMat);
-        podPipe.position.set(mx > 0 ? mx - 0.15 : mx + 0.15, 0, 0.02);
-        fGroup.add(pod, podTrim, podPipe);
-      });
-
-      const emitter = new THREE.Group();
-      const outerRing = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.052, 10, 32), cyberChromeMat);
-      const midArmorRing = new THREE.Mesh(new THREE.TorusGeometry(0.49, 0.04, 8, 24), cyberArmorMat);
-      const coilRing = new THREE.Mesh(new THREE.TorusGeometry(0.37, 0.024, 8, 24), electrodeGlowMat);
-      const hexBase = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.27, 0.12, 6), cubeReactorArmorMat);
-      hexBase.rotation.x = Math.PI / 2;
-      const centerNeedle = new THREE.Mesh(new THREE.ConeGeometry(0.058, 0.34, 8), electrodeGlowMat);
-      centerNeedle.rotation.x = -Math.PI / 2;
-      centerNeedle.position.z = -0.21;
-      for (let k = 0; k < 6; k++) {
-        const a = (k * Math.PI) / 3;
-        const clamp = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.25, 0.12), cyberArmorMat);
-        clamp.position.set(Math.cos(a) * 0.62, Math.sin(a) * 0.62, 0);
-        clamp.rotation.z = a + Math.PI / 2;
-        emitter.add(clamp);
-      }
-      emitter.add(outerRing, midArmorRing, coilRing, hexBase, centerNeedle);
-      emitter.userData.innerRing = coilRing;
-      fGroup.add(emitter);
-      cyberCoils.push(emitter);
-    }
-    return fGroup;
-  }
-
+  const emitterConfigs = [];
   [
     { pos: [0, 0, half - 0.02], rot: [0, 0, 0], center: false },
     { pos: [-half + 0.02, 0, 0], rot: [0, -Math.PI / 2, 0], center: true },
@@ -456,14 +420,140 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
     { pos: [0, half - 0.02, 0], rot: [-Math.PI / 2, 0, 0], center: true },
     { pos: [0, -half + 0.02, 0], rot: [Math.PI / 2, 0, 0], center: true },
   ].forEach(cfg => {
-    const face = buildFaceElectrodeAssembly(cfg.center);
-    face.position.set(...cfg.pos);
-    face.rotation.set(...cfg.rot);
-    cubeGroup.add(face);
+    const fGroup = new THREE.Group();
+    fGroup.position.set(...cfg.pos);
+    fGroup.rotation.set(...cfg.rot);
+
+    const cOff = 1.56;
+    [[-cOff, cOff], [cOff, cOff], [-cOff, -cOff], [cOff, -cOff]].forEach(([ex, ey]) => {
+      const mod = new THREE.Group();
+      mod.position.set(ex, ey, 0);
+      const flange = new THREE.Mesh(fFlangeGeo, cyberChromeMat);
+      flange.rotation.x = Math.PI / 2;
+      const insulator = new THREE.Mesh(fInsGeo, cyberArmorMat);
+      insulator.rotation.x = Math.PI / 2;
+      insulator.position.z = -0.05;
+      const outerCap = new THREE.Mesh(fOuterCapGeo, electrodeGlowMat);
+      outerCap.rotation.x = Math.PI / 2;
+      outerCap.position.z = 0.06;
+      [-0.045, 0.045].forEach(px => {
+        const rod = new THREE.Mesh(fRodGeo, cyberChromeMat);
+        rod.rotation.x = Math.PI / 2;
+        rod.position.set(px, 0, -0.15);
+        const tip = new THREE.Mesh(fTipGeo, electrodeGlowMat);
+        tip.position.set(px, 0, -0.27);
+        mod.add(rod, tip);
+      });
+      mod.add(new THREE.Mesh(fPlateGeo, cubeReactorArmorMat), flange, insulator, outerCap);
+      fGroup.add(mod);
+    });
+
+    fGroup.add(new THREE.LineSegments(traceGeo, staticLineMat));
+
+    [-0.74, 0.74].forEach(bx => {
+      [-1.78, 1.78].forEach(by => {
+        const capBlock = new THREE.Mesh(fCapBlockGeo, cyberArmorMat);
+        capBlock.position.set(bx, by, 0);
+        const busGlow = new THREE.Mesh(fBusGlowGeo, electrodeGlowMat);
+        busGlow.position.set(bx, by, 0);
+        const pin = new THREE.Mesh(fPinGeo, electrodeGlowMat);
+        pin.rotation.x = -Math.PI / 2;
+        pin.position.set(bx, by, -0.1);
+        fGroup.add(capBlock, busGlow, pin);
+      });
+    });
+
+    if (cfg.center) {
+      [-1.42, 1.42].forEach(mx => {
+        const pod = new THREE.Mesh(fPodGeo, cubeReactorArmorMat);
+        pod.position.set(mx, 0, 0);
+        const podTrim = new THREE.Mesh(fPodTrimGeo, violetAccentMat);
+        podTrim.position.set(mx, 0, 0);
+        const podPipe = new THREE.Mesh(fPodPipeGeo, cyberChromeMat);
+        podPipe.position.set(mx > 0 ? mx - 0.15 : mx + 0.15, 0, 0.02);
+        fGroup.add(pod, podTrim, podPipe);
+      });
+      emitterConfigs.push({ pos: cfg.pos, rot: cfg.rot });
+    }
+    staticRoot.add(fGroup);
   });
 
+  // 4 вращающихся эмиттера граней через 3 InstancedMesh (3 draw calls вместо 44)
+  const emitterOuterChromeGeo = new THREE.TorusGeometry(0.62, 0.052, 10, 32);
+  const hexBaseGeo = new THREE.CylinderGeometry(0.22, 0.27, 0.12, 6);
+  hexBaseGeo.rotateX(Math.PI / 2);
+  const emitterArmorParts = [
+    prepareGeometry(new THREE.TorusGeometry(0.49, 0.04, 8, 24), null, 0x150929),
+    prepareGeometry(hexBaseGeo, null, 0x1e1138),
+  ];
+  hexBaseGeo.dispose();
+  const clampSrc = new THREE.BoxGeometry(0.13, 0.25, 0.12);
+  const _emMat = new THREE.Matrix4();
+  const _emQuat = new THREE.Quaternion();
+  const _emEuler = new THREE.Euler();
+  const _emPos = new THREE.Vector3();
+  const _emScale = new THREE.Vector3(1, 1, 1);
+  for (let k = 0; k < 6; k++) {
+    const a = (k * Math.PI) / 3;
+    _emPos.set(Math.cos(a) * 0.62, Math.sin(a) * 0.62, 0);
+    _emEuler.set(0, 0, a + Math.PI / 2);
+    _emQuat.setFromEuler(_emEuler);
+    _emMat.compose(_emPos, _emQuat, _emScale);
+    emitterArmorParts.push(prepareGeometry(clampSrc, _emMat, 0x150929));
+  }
+  clampSrc.dispose();
+  const emitterOuterArmorGeo = mergePreparedGeometries(emitterArmorParts);
+
+  const coilRingGeo = new THREE.TorusGeometry(0.37, 0.024, 8, 24);
+  const centerNeedleGeo = new THREE.ConeGeometry(0.058, 0.34, 8);
+  centerNeedleGeo.rotateX(-Math.PI / 2);
+  centerNeedleGeo.translate(0, 0, -0.21);
+  const emitterInnerGlowGeo = mergePreparedGeometries([
+    prepareGeometry(coilRingGeo),
+    prepareGeometry(centerNeedleGeo),
+  ]);
+  coilRingGeo.dispose();
+  centerNeedleGeo.dispose();
+
+  const emitterCount = emitterConfigs.length;
+  const emitterOuterChromeInst = new THREE.InstancedMesh(emitterOuterChromeGeo, cyberChromeMat, emitterCount);
+  const emitterOuterArmorInst = new THREE.InstancedMesh(emitterOuterArmorGeo, cyberArmorMat, emitterCount);
+  const emitterInnerGlowInst = new THREE.InstancedMesh(emitterInnerGlowGeo, electrodeGlowMat, emitterCount);
+  cubeGroup.add(emitterOuterChromeInst, emitterOuterArmorInst, emitterInnerGlowInst);
+
+  const emitterQuats = emitterConfigs.map(cfg => new THREE.Quaternion().setFromEuler(new THREE.Euler(...cfg.rot)));
+  const emitterOffsets = emitterConfigs.map(cfg => new THREE.Vector3(...cfg.pos));
+  const emitterSpinOuter = new Float32Array(emitterCount);
+  const emitterSpinInner = new Float32Array(emitterCount);
+  const _spinQuat = new THREE.Quaternion();
+  const _finalQuat = new THREE.Quaternion();
+  const _zAxis = new THREE.Vector3(0, 0, 1);
+
+  function updateEmitters(dt) {
+    for (let i = 0; i < emitterCount; i++) {
+      const dir = i % 2 === 0 ? 1 : -1;
+      emitterSpinOuter[i] += dt * 0.52 * dir;
+      emitterSpinInner[i] -= dt * 0.63 * dir;
+
+      _spinQuat.setFromAxisAngle(_zAxis, emitterSpinOuter[i]);
+      _finalQuat.copy(emitterQuats[i]).multiply(_spinQuat);
+      _emMat.compose(emitterOffsets[i], _finalQuat, _emScale);
+      emitterOuterChromeInst.setMatrixAt(i, _emMat);
+      emitterOuterArmorInst.setMatrixAt(i, _emMat);
+
+      _spinQuat.setFromAxisAngle(_zAxis, emitterSpinInner[i]);
+      _finalQuat.copy(emitterQuats[i]).multiply(_spinQuat);
+      _emMat.compose(emitterOffsets[i], _finalQuat, _emScale);
+      emitterInnerGlowInst.setMatrixAt(i, _emMat);
+    }
+    emitterOuterChromeInst.instanceMatrix.needsUpdate = true;
+    emitterOuterArmorInst.instanceMatrix.needsUpdate = true;
+    emitterInnerGlowInst.instanceMatrix.needsUpdate = true;
+  }
+  updateEmitters(0);
+
   // -------------------------------------------------------------------------
-  // Левый батарейный блок-накопитель данных с процентами, индексами и коэффициентами
+  // Левый блок шкалы анализа договора и рисков
   // -------------------------------------------------------------------------
   const leftStorageGroup = new THREE.Group();
   leftStorageGroup.position.set(-half - 1.02, -0.1, 0.05);
@@ -471,7 +561,6 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
   const vaultBody = new THREE.Mesh(new THREE.BoxGeometry(1.18, 3.36, 1.54), cubeReactorArmorMat);
   const vaultCapTop = new THREE.Mesh(new THREE.BoxGeometry(1.26, 0.18, 1.62), cyberChromeMat);
   vaultCapTop.position.y = 1.72;
-  // Диагностический маяк-гребень блока анализа и рисков сверху корпуса
   const diagCap = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.10, 0.96), cyberArmorMat);
   diagCap.position.y = 1.84;
   const diagVisor = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.045, 0.98), electrodeGlowMat);
@@ -480,51 +569,73 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
   vaultCapBot.position.y = -1.72;
   const vaultEdgeFrame = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.BoxGeometry(1.22, 3.40, 1.58)),
-    new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.58 })
+    staticLineMat
   );
   leftStorageGroup.add(vaultBody, vaultCapTop, diagCap, diagVisor, vaultCapBot, vaultEdgeFrame);
 
+  const cConduitGeo = new THREE.CylinderGeometry(0.085, 0.085, 0.56, 12);
+  const cSleeveGeo = new THREE.CylinderGeometry(0.11, 0.11, 0.16, 12);
   [-0.85, 0.85].forEach(cy => {
-    const conduit = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.56, 12), cyberChromeMat);
+    const conduit = new THREE.Mesh(cConduitGeo, cyberChromeMat);
     conduit.rotation.z = Math.PI / 2;
     conduit.position.set(0.72, cy, 0);
-    const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.16, 12), electrodeGlowMat);
+    const sleeve = new THREE.Mesh(cSleeveGeo, electrodeGlowMat);
     sleeve.rotation.z = Math.PI / 2;
     sleeve.position.set(0.60, cy, 0);
     leftStorageGroup.add(conduit, sleeve);
   });
 
-  // 5 ячеек заряда снизу вверх (20% -> 40% -> 60% -> 80% -> 100%)
+  // 5 якорей слотов для точного попадания облака + 1 InstancedMesh светящихся шкал-индикаторов
   const vaultSlots = [];
-  for (let s = 0; s < 5; s++) {
-    const slotGroup = new THREE.Group();
-    slotGroup.position.set(0.02, -1.26 + s * 0.36, 0.04);
-    const bayBezel = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.25, 1.38), cyberArmorMat);
-    const coreMat = new THREE.MeshStandardMaterial({
-      color: 0x0f172a,
-      emissive: 0x09111f,
-      emissiveIntensity: 0.18,
-      metalness: 0.08,
-      roughness: 0.82,
-      envMapIntensity: 0.12,
-    });
-    const coreBar = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.13, 1.44), coreMat);
-    slotGroup.add(bayBezel, coreBar);
-    leftStorageGroup.add(slotGroup);
-    vaultSlots.push({ group: slotGroup, coreBar, coreMat, lit: false });
-  }
+  const bayBezelGeo = new THREE.BoxGeometry(0.92, 0.25, 1.38);
+  const coreBarGeo = new THREE.BoxGeometry(0.72, 0.13, 1.44);
+  const vaultCoreMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    emissive: 0x0ea5e9,
+    emissiveIntensity: 0.48,
+    metalness: 0.12,
+    roughness: 0.72,
+    envMapIntensity: 0.15,
+  });
+  const vaultCoreInst = new THREE.InstancedMesh(coreBarGeo, vaultCoreMat, 5);
+  leftStorageGroup.add(vaultCoreInst);
 
-  // Высококонтрастный передний телеметрический дисплей батареи (шкала, %, IDX-S, К-РИСК, поток)
+  const _slotAnchorDummy = new THREE.Object3D();
+  const _slotColor = new THREE.Color();
+  const slotColorsState = new Int32Array(5).fill(-1);
+
+  for (let s = 0; s < 5; s++) {
+    const sy = -1.26 + s * 0.36;
+    const anchor = new THREE.Object3D();
+    anchor.position.set(0.02, sy, 0.04);
+    leftStorageGroup.add(anchor);
+
+    const bayBezel = new THREE.Mesh(bayBezelGeo, cyberArmorMat);
+    bayBezel.position.set(0.02, sy, 0.04);
+    staticRoot.add((() => {
+      // Помещаем bezel в локальные координаты leftStorageGroup через временный узел-обёртку
+      return bayBezel;
+    })());
+    // Чтобы позиция точно совпадала с leftStorageGroup:
+    bayBezel.position.set(leftStorageGroup.position.x + 0.02, leftStorageGroup.position.y + sy, leftStorageGroup.position.z + 0.04);
+
+    _slotAnchorDummy.position.set(0.02, sy, 0.04);
+    _slotAnchorDummy.updateMatrix();
+    vaultCoreInst.setMatrixAt(s, _slotAnchorDummy.matrix);
+    _slotColor.setHex(0x0c1528);
+    vaultCoreInst.setColorAt(s, _slotColor);
+    vaultSlots.push({ group: anchor, lit: false });
+  }
+  vaultCoreInst.instanceMatrix.needsUpdate = true;
+  if (vaultCoreInst.instanceColor) vaultCoreInst.instanceColor.needsUpdate = true;
+
+  // Высококонтрастный передний телеметрический дисплей шкалы анализа и рисков
   const storageCanvas = document.createElement('canvas');
   storageCanvas.width = 512;
   storageCanvas.height = 460;
   const storageCtx = storageCanvas.getContext('2d');
   const storageTex = new THREE.CanvasTexture(storageCanvas);
-  storageTex.colorSpace = THREE.SRGBColorSpace;
-  storageTex.generateMipmaps = true;
-  storageTex.minFilter = THREE.LinearMipmapLinearFilter;
-  storageTex.magFilter = THREE.LinearFilter;
-  storageTex.anisotropy = maxAnisotropy;
+  configureCrispTexture(storageTex, maxAnisotropy, true);
 
   const storageScreen = new THREE.Mesh(
     new THREE.PlaneGeometry(1.12, 1.00),
@@ -533,13 +644,92 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
   storageScreen.position.set(0, 1.06, 0.80);
   const storageScreenRim = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.PlaneGeometry(1.15, 1.03)),
-    new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.88 })
+    staticLineMat
   );
   storageScreenRim.position.copy(storageScreen.position);
-  leftStorageGroup.add(storageScreen, storageScreenRim);
+  leftStorageGroup.add(storageScreen);
 
-  let lastDrawnPct = -1;
+  // Продублируем статические элементы leftStorageGroup (кроме живых storageScreen и vaultCoreInst)
+  const leftStorageStaticMirror = new THREE.Group();
+  leftStorageStaticMirror.position.copy(leftStorageGroup.position);
+  [vaultBody, vaultCapTop, diagCap, diagVisor, vaultCapBot, vaultEdgeFrame].forEach(el => {
+    leftStorageGroup.remove(el);
+    leftStorageStaticMirror.add(el);
+  });
+  leftStorageGroup.children.slice().forEach(ch => {
+    if (ch !== storageScreen && ch !== vaultCoreInst && ch.isMesh) {
+      leftStorageGroup.remove(ch);
+      leftStorageStaticMirror.add(ch);
+    }
+  });
+  leftStorageStaticMirror.add(storageScreenRim);
+  staticRoot.add(leftStorageStaticMirror);
+  cubeGroup.add(leftStorageGroup);
+
+  // Правая проекционная камера
+  const rightCamProjector = new THREE.Group();
+  rightCamProjector.position.set(half - 0.06, 1.24, 0.68);
+  const rCamMount = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.24), cyberArmorMat);
+  const rCamHousing = new THREE.Group();
+  rCamHousing.position.set(0.10, 0.02, 0.05);
+  rCamHousing.rotation.set(0.22, 0.45, 0.18);
+  const rCamBox = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.18, 0.22), cyberChromeMat);
+  const rCamBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.072, 0.14, 14), cyberArmorMat);
+  rCamBarrel.rotation.z = -Math.PI / 2;
+  rCamBarrel.position.set(0.12, 0, 0);
+  rCamHousing.add(rCamBox, rCamBarrel);
+  rightCamProjector.add(rCamMount, rCamHousing);
+  staticRoot.add(rightCamProjector);
+
+  const rightCamLensMat = new THREE.MeshStandardMaterial({
+    color: 0x38bdf8, emissive: 0x38bdf8, emissiveIntensity: 0.35, roughness: 0.25,
+  });
+  const rightCamLens = new THREE.Mesh(new THREE.SphereGeometry(0.042, 12, 12), rightCamLensMat);
+  rightCamLens.position.set(0.19, 0, 0);
+  const rightCamLensMount = new THREE.Group();
+  rightCamLensMount.position.copy(rightCamProjector.position);
+  const rightCamLensHousing = new THREE.Group();
+  rightCamLensHousing.position.copy(rCamHousing.position);
+  rightCamLensHousing.rotation.copy(rCamHousing.rotation);
+  rightCamLensHousing.add(rightCamLens);
+  rightCamLensMount.add(rightCamLensHousing);
+  cubeGroup.add(rightCamLensMount);
+
+  // Финальное объединение всей статической геометрии куба по материалам (6 draw calls вместо ~600!)
+  staticRoot.updateMatrixWorld(true);
+  staticRoot.traverse(obj => {
+    if (obj.isMesh && matBuckets.has(obj.material)) {
+      const vColor = obj.material === cyberArmorMat ? (obj.userData.vColor ?? 0x150929) : null;
+      matBuckets.get(obj.material).push(prepareGeometry(obj.geometry, obj.matrixWorld, vColor));
+    } else if (obj.isLineSegments) {
+      const lg = obj.geometry.index ? obj.geometry.toNonIndexed() : obj.geometry.clone();
+      lg.applyMatrix4(obj.matrixWorld);
+      for (const key of Object.keys(lg.attributes)) {
+        if (key !== 'position') lg.deleteAttribute(key);
+      }
+      lineGeosToMerge.push(lg);
+    }
+  });
+
+  matBuckets.forEach((geos, mat) => {
+    const merged = mergePreparedGeometries(geos);
+    if (merged) {
+      cubeGroup.add(new THREE.Mesh(merged, mat));
+    }
+  });
+  if (lineGeosToMerge.length > 0) {
+    const mergedLines = mergePreparedGeometries(lineGeosToMerge);
+    if (mergedLines) {
+      cubeGroup.add(new THREE.LineSegments(mergedLines, staticLineMat));
+    }
+  }
+
+  let lastDrawnKey = '';
   function drawStorageTelemetry(telemetry) {
+    const key = `${telemetry.chargePct}|${telemetry.storedCount}|${telemetry.statusLabel}|${telemetry.flowMbps}`;
+    if (key === lastDrawnKey) return;
+    lastDrawnKey = key;
+
     const pct = telemetry.chargePct;
     const w = storageCanvas.width;
     const h = storageCanvas.height;
@@ -555,12 +745,10 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
     storageCtx.textAlign = 'left';
     storageCtx.fillText('ШКАЛА АНАЛИЗА И РИСКОВ', 22, 48);
 
-    // Крупные проценты прогресса анализа договора
     storageCtx.fillStyle = pct >= 80 ? '#fda4af' : '#e0f2fe';
     storageCtx.font = '900 84px Arial, sans-serif';
     storageCtx.fillText(`${pct}%`, 22, 136);
 
-    // Сегментированная шкала анализа и плотности рисков справа от процентов
     const bx = 250, by = 72, bw = 232, bh = 58;
     storageCtx.strokeStyle = 'rgba(125, 211, 252, 0.72)';
     storageCtx.lineWidth = 4;
@@ -587,7 +775,6 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
     storageCtx.textAlign = 'right';
     storageCtx.fillText('100%', bx + bw, by + bh + 16);
 
-    // Разделитель и сетка индексов/коэффициентов
     storageCtx.strokeStyle = 'rgba(56, 189, 248, 0.42)';
     storageCtx.lineWidth = 3;
     storageCtx.beginPath();
@@ -619,44 +806,40 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
     storageCtx.textAlign = 'center';
     storageCtx.fillText(telemetry.statusLabel, w / 2, h - 22);
     storageTex.needsUpdate = true;
-    lastDrawnPct = pct;
   }
 
   function updateStorageDisplay(telemetry) {
     const filledFloat = telemetry.rawFraction * vaultSlots.length;
+    let colorDirty = false;
     for (let i = 0; i < vaultSlots.length; i++) {
       const slot = vaultSlots[i];
       const cellFill = Math.min(1, Math.max(0, filledFloat - i));
       const isActive = cellFill > 0.05;
       slot.lit = cellFill >= 0.99;
-      if (isActive) {
-        const isHigh = i >= 3;
-        slot.coreMat.color.setHex(isHigh ? 0x9f1239 : 0x0284c7);
-        slot.coreMat.emissive.setHex(isHigh ? 0xf43f5e : 0x0ea5e9);
-        slot.coreMat.emissiveIntensity = 0.25 + cellFill * 0.48;
-      } else {
-        slot.coreMat.color.setHex(0x0f172a);
-        slot.coreMat.emissive.setHex(0x09111f);
-        slot.coreMat.emissiveIntensity = 0.18;
+      const targetHex = isActive ? (i >= 3 ? 0xf43f5e : 0x0ea5e9) : 0x0c1528;
+      if (slotColorsState[i] !== targetHex) {
+        slotColorsState[i] = targetHex;
+        _slotColor.setHex(targetHex);
+        vaultCoreInst.setColorAt(i, _slotColor);
+        colorDirty = true;
       }
     }
-    if (Math.abs(telemetry.chargePct - lastDrawnPct) >= 1) {
-      drawStorageTelemetry(telemetry);
+    if (colorDirty && vaultCoreInst.instanceColor) {
+      vaultCoreInst.instanceColor.needsUpdate = true;
     }
+    drawStorageTelemetry(telemetry);
   }
 
   function setVaultSlotLit(idx, lit) {
     const slot = vaultSlots[idx];
     if (!slot) return;
     slot.lit = lit;
-    if (lit) {
-      slot.coreMat.color.setHex(idx >= 3 ? 0x9f1239 : 0x0284c7);
-      slot.coreMat.emissive.setHex(idx >= 3 ? 0xf43f5e : 0x0ea5e9);
-      slot.coreMat.emissiveIntensity = 0.68;
-    } else {
-      slot.coreMat.color.setHex(0x0f172a);
-      slot.coreMat.emissive.setHex(0x09111f);
-      slot.coreMat.emissiveIntensity = 0.18;
+    const targetHex = lit ? (idx >= 3 ? 0xf43f5e : 0x0ea5e9) : 0x0c1528;
+    if (slotColorsState[idx] !== targetHex) {
+      slotColorsState[idx] = targetHex;
+      _slotColor.setHex(targetHex);
+      vaultCoreInst.setColorAt(idx, _slotColor);
+      if (vaultCoreInst.instanceColor) vaultCoreInst.instanceColor.needsUpdate = true;
     }
   }
 
@@ -670,29 +853,10 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
     flowMbps: 0,
     statusLabel: 'ОЖИДАНИЕ',
   });
-  cubeGroup.add(leftStorageGroup);
-
-  const rightCamProjector = new THREE.Group();
-  rightCamProjector.position.set(half - 0.06, 1.24, 0.68);
-  const rCamMount = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.24), cyberArmorMat);
-  const rCamHousing = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.18, 0.22), cyberChromeMat);
-  rCamHousing.position.set(0.10, 0.02, 0.05);
-  rCamHousing.rotation.set(0.22, 0.45, 0.18);
-  const rCamBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.072, 0.14, 14), cyberArmorMat);
-  rCamBarrel.rotation.z = -Math.PI / 2;
-  rCamBarrel.position.set(0.12, 0, 0);
-  const rightCamLensMat = new THREE.MeshStandardMaterial({
-    color: 0x38bdf8, emissive: 0x38bdf8, emissiveIntensity: 0.35, roughness: 0.25,
-  });
-  const rightCamLens = new THREE.Mesh(new THREE.SphereGeometry(0.042, 12, 12), rightCamLensMat);
-  rightCamLens.position.set(0.19, 0, 0);
-  rCamHousing.add(rCamBarrel, rightCamLens);
-  rightCamProjector.add(rCamMount, rCamHousing);
-  cubeGroup.add(rightCamProjector);
 
   return {
     cubeGroup,
-    cyberCoils,
+    updateEmitters,
     portalFieldTex,
     portalGlowMat,
     vaultSlots,
