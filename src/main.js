@@ -1,4 +1,5 @@
 import { STAGES, STAGE_DURATIONS } from './config/stages.js';
+import { getDeviceProfile } from './config/deviceProfile.js';
 import { shouldPlayStartupIntro } from './stages/timelineMath.js';
 import { createBrushedMetalMaps, createPointSpriteTex } from './core/textures.js';
 import { detectSoftwareGl, initSceneRenderer } from './core/renderer.js';
@@ -26,14 +27,24 @@ const state = {
   hasPlayedStartupIntro: false,
 };
 
-const isMobile = window.innerWidth < 640;
+const urlParams = new URLSearchParams(window.location.search);
+const forcedTier = urlParams.get('tier');
+const deviceProfile = getDeviceProfile({
+  width: window.innerWidth,
+  height: window.innerHeight,
+  cores: navigator.hardwareConcurrency || 8,
+  memoryGb: navigator.deviceMemory || 8,
+  coarsePointer: Boolean(window.matchMedia?.('(pointer: coarse)')?.matches),
+  forcedTier,
+});
+const isMobile = deviceProfile.isMobileLayout;
 const isSoftwareGl = detectSoftwareGl();
 const container = document.getElementById('canvas-container');
 const irisOverlay = document.getElementById('iris-overlay');
 const finalLogoScreen = document.getElementById('final-logo-screen');
 
 const { scene, camera, renderer, controls, composer, sceneStats, lights, updatePostProcessing } =
-  initSceneRenderer(container, isMobile, isSoftwareGl);
+  initSceneRenderer(container, deviceProfile, isSoftwareGl);
 
 const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
 const { roughTex: metalTex, normalTex: metalNormalTex } = createBrushedMetalMaps(maxAnisotropy);
@@ -42,11 +53,17 @@ const pointSpriteTex = createPointSpriteTex();
 const sfx = createSfxSynth(() => voicePlayer.audioState.muted);
 const voicePlayer = createVoicePlayer(state, sfx);
 
-const spaceData = createBalancedSpace(scene, isMobile);
+const spaceData = createBalancedSpace(scene, deviceProfile);
 createLogoDisplay(scene, maxAnisotropy);
 const cubeRig = createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex);
 const aiRig = createAiSphereRig(scene, maxAnisotropy, pointSpriteTex);
 const contractRig = createContractRig(scene, maxAnisotropy);
+if (contractRig.disintegrateCloud && contractRig.cloudCount) {
+  contractRig.disintegrateCloud.geometry.setDrawRange(
+    0,
+    Math.max(120, Math.round(contractRig.cloudCount * deviceProfile.cloudParticleRatio))
+  );
+}
 const riskRig = createRiskAbsorptionRig(scene, maxAnisotropy, isMobile, aiRig.agentSpecs, aiRig.flagshipPos);
 const polarRelayRig = createPolarRelayRig(scene, camera, aiRig.flagshipPos, aiRig.flagshipSphere.radius, maxAnisotropy);
 
@@ -60,6 +77,7 @@ const hud = createHudController({
 stageRunner = createStageRunner({
   state,
   isMobile,
+  deviceProfile,
   camera,
   controls,
   lights,
@@ -91,8 +109,7 @@ controls.addEventListener('end', () => {
   state.userInteracting = false;
 });
 
-// Поддержка ?autostart=1 / brief / beam (+ optional &stageTime= / &pageTime=)
-const urlParams = new URLSearchParams(window.location.search);
+// Поддержка ?autostart=1 / brief / transfer / beam (+ optional &stageTime= / &pageTime= / &tier=)
 const autostartMode = urlParams.get('autostart');
 const forcedStageTime = parseFloat(urlParams.get('stageTime') || '');
 const forcedPageTime = parseFloat(urlParams.get('pageTime') || '');
@@ -100,6 +117,8 @@ if (autostartMode === '1') {
   stageRunner.enterStage(STAGES.SCAN);
 } else if (autostartMode === 'brief') {
   stageRunner.enterStage(STAGES.CONTRACT_BRIEF);
+} else if (autostartMode === 'transfer') {
+  stageRunner.enterStage(STAGES.TRANSFER);
 } else if (autostartMode === 'beam') {
   stageRunner.enterStage(STAGES.BEAM_ASCENT);
 } else {
@@ -186,6 +205,7 @@ function tick(now) {
       calls: sceneStats.calls,
       triangles: sceneStats.triangles,
       dpr: sceneStats.dpr,
+      tierLabel: sceneStats.tierLabel || deviceProfile.label,
     });
   }
 

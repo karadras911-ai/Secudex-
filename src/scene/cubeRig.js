@@ -553,46 +553,205 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
   updateEmitters(0);
 
   // -------------------------------------------------------------------------
-  // Левый блок шкалы анализа договора и рисков
+  // Симметричные треугольные буферные зоны сбоку куба + высокие башни над ними
   // -------------------------------------------------------------------------
-  const leftStorageGroup = new THREE.Group();
-  leftStorageGroup.position.set(-half - 1.02, -0.1, 0.05);
+  const towerX = half + 0.80; // 2.975 (внешний край 3.695 — вписывается в экран телефона и ПК)
+  const towerW = 1.44;
+  const towerH = 3.36;
+  const towerD = 1.48;
+  const bufBotY = -2.10;
+  const bufTopY = 2.10;
+  const towerCenterY = bufTopY + 0.02 + towerH / 2; // 3.80 (от +2.12 до +5.48)
+  const bufInnerX = half - 0.04; // 2.135
+  const bufOuterX = half + 1.54; // 3.715
 
-  const vaultBody = new THREE.Mesh(new THREE.BoxGeometry(1.18, 3.36, 1.54), cubeReactorArmorMat);
-  const vaultCapTop = new THREE.Mesh(new THREE.BoxGeometry(1.26, 0.18, 1.62), cyberChromeMat);
-  vaultCapTop.position.y = 1.72;
-  const diagCap = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.10, 0.96), cyberArmorMat);
-  diagCap.position.y = 1.84;
-  const diagVisor = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.045, 0.98), electrodeGlowMat);
-  diagVisor.position.y = 1.87;
-  const vaultCapBot = new THREE.Mesh(new THREE.BoxGeometry(1.26, 0.18, 1.62), cyberChromeMat);
-  vaultCapBot.position.y = -1.72;
-  const vaultEdgeFrame = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(1.22, 3.40, 1.58)),
-    staticLineMat
-  );
-  leftStorageGroup.add(vaultBody, vaultCapTop, diagCap, diagVisor, vaultCapBot, vaultEdgeFrame);
+  function buildBufferTriangleGeo(sideSign) {
+    const shape = new THREE.Shape();
+    const xIn = sideSign * bufInnerX;
+    const xOut = sideSign * bufOuterX;
+    if (sideSign < 0) {
+      shape.moveTo(xIn, bufBotY);
+      shape.lineTo(xOut, bufBotY);
+      shape.lineTo(xIn, bufTopY);
+    } else {
+      shape.moveTo(xIn, bufBotY);
+      shape.lineTo(xIn, bufTopY);
+      shape.lineTo(xOut, bufBotY);
+    }
+    shape.closePath();
+    const geo = new THREE.ExtrudeGeometry(shape, {
+      depth: 1.32,
+      bevelEnabled: true,
+      bevelThickness: 0.06,
+      bevelSize: 0.05,
+      bevelSegments: 2,
+    });
+    geo.translate(0, 0, -0.66 + 0.05);
+    return geo;
+  }
 
-  const cConduitGeo = new THREE.CylinderGeometry(0.085, 0.085, 0.56, 12);
-  const cSleeveGeo = new THREE.CylinderGeometry(0.11, 0.11, 0.16, 12);
-  [-0.85, 0.85].forEach(cy => {
-    const conduit = new THREE.Mesh(cConduitGeo, cyberChromeMat);
-    conduit.rotation.z = Math.PI / 2;
-    conduit.position.set(0.72, cy, 0);
-    const sleeve = new THREE.Mesh(cSleeveGeo, electrodeGlowMat);
-    sleeve.rotation.z = Math.PI / 2;
-    sleeve.position.set(0.60, cy, 0);
-    leftStorageGroup.add(conduit, sleeve);
+  function buildBufferEnergyPlaneGeo(sideSign) {
+    const shape = new THREE.Shape();
+    const xIn = sideSign * (bufInnerX + 0.12);
+    const xOut = sideSign * (bufOuterX - 0.24);
+    const yBot = bufBotY + 0.18;
+    const yTop = bufTopY - 0.34;
+    if (sideSign < 0) {
+      shape.moveTo(xIn, yBot);
+      shape.lineTo(xOut, yBot);
+      shape.lineTo(xIn, yTop);
+    } else {
+      shape.moveTo(xIn, yBot);
+      shape.lineTo(xIn, yTop);
+      shape.lineTo(xOut, yBot);
+    }
+    shape.closePath();
+    const front = new THREE.ShapeGeometry(shape);
+    const back = front.clone();
+    front.translate(0, 0, 0.78);
+    back.translate(0, 0, -0.68);
+    return mergePreparedGeometries([prepareGeometry(front), prepareGeometry(back)]);
+  }
+
+  const leftTriEnergyGeo = buildBufferEnergyPlaneGeo(-1);
+  const rightTriEnergyGeo = buildBufferEnergyPlaneGeo(1);
+  const leftTriVertCount = leftTriEnergyGeo.getAttribute('position').count;
+  const rightTriVertCount = rightTriEnergyGeo.getAttribute('position').count;
+  const mergedBufEnergyGeo = mergePreparedGeometries([leftTriEnergyGeo, rightTriEnergyGeo]);
+  const aSideAttr = new Float32Array(leftTriVertCount + rightTriVertCount);
+  aSideAttr.fill(-1.0, 0, leftTriVertCount);
+  aSideAttr.fill(1.0, leftTriVertCount, leftTriVertCount + rightTriVertCount);
+  mergedBufEnergyGeo.setAttribute('aSide', new THREE.BufferAttribute(aSideAttr, 1));
+
+  const bufferZoneEnergyMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uPulseLeft: { value: 0.35 },
+      uPulseRight: { value: 0.35 },
+      uColorLeft: { value: new THREE.Color(0x38bdf8) },
+      uColorRight: { value: new THREE.Color(0x818cf8) },
+    },
+    vertexShader: `
+      attribute float aSide;
+      varying float vSide;
+      varying vec3 vPos;
+      void main() {
+        vSide = aSide;
+        vPos = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform float uTime;
+      uniform float uPulseLeft;
+      uniform float uPulseRight;
+      uniform vec3 uColorLeft;
+      uniform vec3 uColorRight;
+      varying float vSide;
+      varying vec3 vPos;
+      void main() {
+        float pulse = vSide < 0.0 ? uPulseLeft : uPulseRight;
+        vec3 baseCol = vSide < 0.0 ? uColorLeft : uColorRight;
+        float flowDir = vSide < 0.0 ? -1.0 : 1.0;
+        float grid = max(
+          smoothstep(0.92, 0.99, abs(sin(vPos.x * 10.5))),
+          smoothstep(0.92, 0.99, abs(sin(vPos.y * 10.5)))
+        );
+        float chev = pow(0.5 + 0.5 * sin((vPos.y * 7.5 - abs(vPos.x) * 3.8 * flowDir) - uTime * 4.2), 5.0);
+        vec3 col = mix(baseCol, vec3(0.88, 0.97, 1.0), chev * 0.65);
+        float alpha = (0.18 + grid * 0.16 + chev * 0.34) * (0.45 + pulse * 0.72);
+        gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.84));
+      }
+    `,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const bufferZonesEnergyMesh = new THREE.Mesh(mergedBufEnergyGeo, bufferZoneEnergyMat);
+  cubeGroup.add(bufferZonesEnergyMesh);
+
+  const conduitVGeo = new THREE.CylinderGeometry(0.072, 0.072, 0.30, 12);
+  const sleeveVGeo = new THREE.CylinderGeometry(0.105, 0.105, 0.10, 12);
+  const pylonSpan = (towerCenterY - towerH / 2) - bufBotY;
+
+  [-1, 1].forEach((sideSign) => {
+    const sx = sideSign * towerX;
+
+    // 1. Треугольная буферная зона сбоку куба (широкое основание внизу, сужение к верхнему краю куба)
+    const triBodyGeo = buildBufferTriangleGeo(sideSign);
+    const triBodyMesh = new THREE.Mesh(triBodyGeo, cubeReactorArmorMat);
+    const triEdgeMesh = new THREE.LineSegments(new THREE.EdgesGeometry(triBodyGeo), staticLineMat);
+    staticRoot.add(triBodyMesh, triEdgeMesh);
+
+    // Диагональное несущее ребро и неоновая шина вдоль гипотенузы треугольника
+    const hypStart = new THREE.Vector3(sideSign * bufOuterX, bufBotY, 0.05);
+    const hypEnd = new THREE.Vector3(sideSign * bufInnerX, bufTopY, 0.05);
+    const hypLen = hypStart.distanceTo(hypEnd);
+    const hypMid = new THREE.Vector3().lerpVectors(hypStart, hypEnd, 0.5);
+    const hypQuat = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3().subVectors(hypEnd, hypStart).normalize()
+    );
+    const hypBeam = new THREE.Mesh(new THREE.BoxGeometry(0.14, hypLen, 1.50), cyberChromeMat);
+    hypBeam.position.copy(hypMid);
+    hypBeam.quaternion.copy(hypQuat);
+    const hypNeon = new THREE.Mesh(new THREE.BoxGeometry(0.048, hypLen - 0.18, 1.54), electrodeGlowMat);
+    hypNeon.position.copy(hypMid);
+    hypNeon.quaternion.copy(hypQuat);
+    staticRoot.add(hypBeam, hypNeon);
+
+    // Внешняя вертикальная несущая опора от нижнего края буферной зоны до прямоугольной башни сверху
+    const pylonX = sideSign * (towerX + towerW / 2 - 0.06);
+    const outerPylon = new THREE.Mesh(new THREE.BoxGeometry(0.16, pylonSpan, 1.38), cyberArmorMat);
+    outerPylon.position.set(pylonX, bufBotY + pylonSpan / 2, 0.05);
+    const outerPylonNeon = new THREE.Mesh(new THREE.BoxGeometry(0.045, pylonSpan - 0.12, 1.42), electrodeGlowMat);
+    outerPylonNeon.position.set(pylonX, bufBotY + pylonSpan / 2, 0.05);
+    const pylonShoe = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.16, 1.50), cyberChromeMat);
+    pylonShoe.position.set(pylonX - sideSign * 0.04, bufBotY + 0.06, 0.05);
+    staticRoot.add(outerPylon, outerPylonNeon, pylonShoe);
+
+    // 2. Высокая прямоугольная башня прямо над треугольной буферной зоной
+    const towerStatic = new THREE.Group();
+    towerStatic.position.set(sx, towerCenterY, 0.05);
+
+    const towerBody = new THREE.Mesh(new THREE.BoxGeometry(towerW, towerH, towerD), cubeReactorArmorMat);
+    const towerCapTop = new THREE.Mesh(new THREE.BoxGeometry(towerW + 0.10, 0.14, towerD + 0.10), cyberChromeMat);
+    towerCapTop.position.y = towerH / 2 + 0.05;
+    const towerCrown = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.10, 0.96), cyberArmorMat);
+    towerCrown.position.y = towerH / 2 + 0.16;
+    const towerVisor = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.045, 0.98), electrodeGlowMat);
+    towerVisor.position.y = towerH / 2 + 0.20;
+    const towerCapBot = new THREE.Mesh(new THREE.BoxGeometry(towerW + 0.10, 0.14, towerD + 0.10), cyberChromeMat);
+    towerCapBot.position.y = -towerH / 2 - 0.04;
+    const towerFrame = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(towerW + 0.04, towerH + 0.04, towerD + 0.04)),
+      staticLineMat
+    );
+    towerStatic.add(towerBody, towerCapTop, towerCrown, towerVisor, towerCapBot, towerFrame);
+
+    // Аккуратная вертикальная силовая муфта от основания башни вниз к верхнему углу куба и буфера
+    const vc = new THREE.Mesh(conduitVGeo, cyberChromeMat);
+    vc.position.set(-sideSign * (towerW / 2 - 0.14), -towerH / 2 - 0.12, 0);
+    const vs = new THREE.Mesh(sleeveVGeo, electrodeGlowMat);
+    vs.position.set(-sideSign * (towerW / 2 - 0.14), -towerH / 2 - 0.08, 0);
+    towerStatic.add(vc, vs);
+    staticRoot.add(towerStatic);
   });
 
-  // 5 якорей слотов для точного попадания облака + 1 InstancedMesh светящихся шкал-индикаторов
+  // -------------------------------------------------------------------------
+  // Левая Башня Архива: 5 слотов хранения + верхний дисплей "ШКАЛА АНАЛИЗА И РИСКОВ"
+  // -------------------------------------------------------------------------
+  const leftStorageGroup = new THREE.Group();
+  leftStorageGroup.position.set(-towerX, towerCenterY, 0.05);
+
   const vaultSlots = [];
-  const bayBezelGeo = new THREE.BoxGeometry(0.92, 0.25, 1.38);
-  const coreBarGeo = new THREE.BoxGeometry(0.72, 0.13, 1.44);
+  const bayBezelGeo = new THREE.BoxGeometry(1.12, 0.21, 1.38);
+  const coreBarGeo = new THREE.BoxGeometry(0.92, 0.115, 1.44);
   const vaultCoreMat = new THREE.MeshStandardMaterial({
     color: 0xffffff,
     emissive: 0x0ea5e9,
-    emissiveIntensity: 0.48,
+    emissiveIntensity: 0.54,
     metalness: 0.12,
     roughness: 0.72,
     envMapIntensity: 0.15,
@@ -605,21 +764,16 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
   const slotColorsState = new Int32Array(5).fill(-1);
 
   for (let s = 0; s < 5; s++) {
-    const sy = -1.26 + s * 0.36;
+    const sy = -1.32 + s * 0.28;
     const anchor = new THREE.Object3D();
-    anchor.position.set(0.02, sy, 0.04);
+    anchor.position.set(0.0, sy, 0.04);
     leftStorageGroup.add(anchor);
 
     const bayBezel = new THREE.Mesh(bayBezelGeo, cyberArmorMat);
-    bayBezel.position.set(0.02, sy, 0.04);
-    staticRoot.add((() => {
-      // Помещаем bezel в локальные координаты leftStorageGroup через временный узел-обёртку
-      return bayBezel;
-    })());
-    // Чтобы позиция точно совпадала с leftStorageGroup:
-    bayBezel.position.set(leftStorageGroup.position.x + 0.02, leftStorageGroup.position.y + sy, leftStorageGroup.position.z + 0.04);
+    bayBezel.position.set(-towerX, towerCenterY + sy, 0.09);
+    staticRoot.add(bayBezel);
 
-    _slotAnchorDummy.position.set(0.02, sy, 0.04);
+    _slotAnchorDummy.position.set(0.0, sy, 0.04);
     _slotAnchorDummy.updateMatrix();
     vaultCoreInst.setMatrixAt(s, _slotAnchorDummy.matrix);
     _slotColor.setHex(0x0c1528);
@@ -629,71 +783,143 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
   vaultCoreInst.instanceMatrix.needsUpdate = true;
   if (vaultCoreInst.instanceColor) vaultCoreInst.instanceColor.needsUpdate = true;
 
-  // Высококонтрастный передний телеметрический дисплей шкалы анализа и рисков
-  const storageCanvas = document.createElement('canvas');
-  storageCanvas.width = 512;
-  storageCanvas.height = 460;
-  const storageCtx = storageCanvas.getContext('2d');
-  const storageTex = new THREE.CanvasTexture(storageCanvas);
-  configureCrispTexture(storageTex, maxAnisotropy, true);
+  const towerAtlasCanvas = document.createElement('canvas');
+  towerAtlasCanvas.width = 2048;
+  towerAtlasCanvas.height = 920;
+  const towerAtlasCtx = towerAtlasCanvas.getContext('2d');
+  const towerAtlasTex = new THREE.CanvasTexture(towerAtlasCanvas);
+  configureCrispTexture(towerAtlasTex, maxAnisotropy, true);
 
-  const storageScreen = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.12, 1.00),
-    new THREE.MeshBasicMaterial({ map: storageTex, side: THREE.DoubleSide })
-  );
-  storageScreen.position.set(0, 1.06, 0.80);
+  const storageCanvas = document.createElement('canvas');
+  storageCanvas.width = 1024;
+  storageCanvas.height = 920;
+  const storageCtx = storageCanvas.getContext('2d');
+
+  const scrW = 1.32;
+  const scrH = 1.24;
+  const scrLocalY = 0.80;
+
+  const leftScrGeo = new THREE.PlaneGeometry(scrW, scrH);
+  const leftUv = leftScrGeo.attributes.uv;
+  for (let i = 0; i < leftUv.count; i++) leftUv.setX(i, leftUv.getX(i) * 0.5);
+  leftScrGeo.translate(-towerX, towerCenterY + scrLocalY, 0.05 + towerD / 2 + 0.03);
+
   const storageScreenRim = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.PlaneGeometry(1.15, 1.03)),
+    new THREE.EdgesGeometry(new THREE.PlaneGeometry(scrW + 0.04, scrH + 0.04)),
     staticLineMat
   );
-  storageScreenRim.position.copy(storageScreen.position);
-  leftStorageGroup.add(storageScreen);
-
-  // Продублируем статические элементы leftStorageGroup (кроме живых storageScreen и vaultCoreInst)
-  const leftStorageStaticMirror = new THREE.Group();
-  leftStorageStaticMirror.position.copy(leftStorageGroup.position);
-  [vaultBody, vaultCapTop, diagCap, diagVisor, vaultCapBot, vaultEdgeFrame].forEach(el => {
-    leftStorageGroup.remove(el);
-    leftStorageStaticMirror.add(el);
-  });
-  leftStorageGroup.children.slice().forEach(ch => {
-    if (ch !== storageScreen && ch !== vaultCoreInst && ch.isMesh) {
-      leftStorageGroup.remove(ch);
-      leftStorageStaticMirror.add(ch);
-    }
-  });
-  leftStorageStaticMirror.add(storageScreenRim);
-  staticRoot.add(leftStorageStaticMirror);
+  storageScreenRim.position.set(-towerX, towerCenterY + scrLocalY, 0.05 + towerD / 2 + 0.03);
+  staticRoot.add(storageScreenRim);
   cubeGroup.add(leftStorageGroup);
 
-  // Правая проекционная камера
-  const rightCamProjector = new THREE.Group();
-  rightCamProjector.position.set(half - 0.06, 1.24, 0.68);
-  const rCamMount = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.24), cyberArmorMat);
-  const rCamHousing = new THREE.Group();
-  rCamHousing.position.set(0.10, 0.02, 0.05);
-  rCamHousing.rotation.set(0.22, 0.45, 0.18);
-  const rCamBox = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.18, 0.22), cyberChromeMat);
-  const rCamBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.072, 0.14, 14), cyberArmorMat);
-  rCamBarrel.rotation.z = -Math.PI / 2;
-  rCamBarrel.position.set(0.12, 0, 0);
-  rCamHousing.add(rCamBox, rCamBarrel);
-  rightCamProjector.add(rCamMount, rCamHousing);
-  staticRoot.add(rightCamProjector);
+  // -------------------------------------------------------------------------
+  // Правая Башня Проекции: оптический излучатель + дисплей реквизитов договора
+  // -------------------------------------------------------------------------
+  const rightTowerGroup = new THREE.Group();
+  rightTowerGroup.position.set(towerX, towerCenterY, 0.05);
+
+  const projBayLocalY = -0.78;
+  const projBayFrame = new THREE.Mesh(new THREE.BoxGeometry(1.12, 1.04, 0.16), cyberArmorMat);
+  projBayFrame.position.set(towerX, towerCenterY + projBayLocalY, 0.05 + towerD / 2 + 0.01);
+  const projRingOuter = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.040, 8, 24), cyberChromeMat);
+  projRingOuter.position.set(towerX, towerCenterY + projBayLocalY, 0.05 + towerD / 2 + 0.11);
+  const projBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.25, 0.18, 16), cyberArmorMat);
+  projBarrel.rotation.x = Math.PI / 2;
+  projBarrel.position.set(towerX, towerCenterY + projBayLocalY, 0.05 + towerD / 2 + 0.14);
+  const projRimLines = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.PlaneGeometry(scrW + 0.04, scrH + 0.04)),
+    staticLineMat
+  );
+  projRimLines.position.set(towerX, towerCenterY + scrLocalY, 0.05 + towerD / 2 + 0.03);
+  staticRoot.add(projBayFrame, projRingOuter, projBarrel, projRimLines);
 
   const rightCamLensMat = new THREE.MeshStandardMaterial({
-    color: 0x38bdf8, emissive: 0x38bdf8, emissiveIntensity: 0.35, roughness: 0.25,
+    color: 0x38bdf8, emissive: 0x38bdf8, emissiveIntensity: 0.55, roughness: 0.2,
   });
-  const rightCamLens = new THREE.Mesh(new THREE.SphereGeometry(0.042, 12, 12), rightCamLensMat);
-  rightCamLens.position.set(0.19, 0, 0);
-  const rightCamLensMount = new THREE.Group();
-  rightCamLensMount.position.copy(rightCamProjector.position);
-  const rightCamLensHousing = new THREE.Group();
-  rightCamLensHousing.position.copy(rCamHousing.position);
-  rightCamLensHousing.rotation.copy(rCamHousing.rotation);
-  rightCamLensHousing.add(rightCamLens);
-  rightCamLensMount.add(rightCamLensHousing);
-  cubeGroup.add(rightCamLensMount);
+  const rightCamLens = new THREE.Mesh(new THREE.SphereGeometry(0.145, 16, 16), rightCamLensMat);
+  rightCamLens.position.set(0, projBayLocalY, towerD / 2 + 0.22);
+  rightTowerGroup.add(rightCamLens);
+
+  const projCanvas = document.createElement('canvas');
+  projCanvas.width = 1024;
+  projCanvas.height = 920;
+  const projCtx = projCanvas.getContext('2d');
+
+  const rightScrGeo = new THREE.PlaneGeometry(scrW, scrH);
+  const rightUv = rightScrGeo.attributes.uv;
+  for (let i = 0; i < rightUv.count; i++) rightUv.setX(i, 0.5 + rightUv.getX(i) * 0.5);
+  rightScrGeo.translate(towerX, towerCenterY + scrLocalY, 0.05 + towerD / 2 + 0.03);
+
+  const mergedTowerScreensMesh = new THREE.Mesh(
+    mergePreparedGeometries([prepareGeometry(leftScrGeo), prepareGeometry(rightScrGeo)]),
+    new THREE.MeshBasicMaterial({ map: towerAtlasTex, side: THREE.DoubleSide, toneMapped: false })
+  );
+  leftScrGeo.dispose();
+  rightScrGeo.dispose();
+  cubeGroup.add(mergedTowerScreensMesh);
+  cubeGroup.add(rightTowerGroup);
+
+  let lastProjScreenKey = '';
+  function drawProjectionTowerDisplay(statusLabel = 'ОЖИДАНИЕ', active = false) {
+    const key = `${statusLabel}|${active ? 1 : 0}`;
+    if (key === lastProjScreenKey) return;
+    lastProjScreenKey = key;
+
+    const vw = 512;
+    const vh = 460;
+    projCtx.save();
+    projCtx.setTransform(2, 0, 0, 2, 0, 0);
+    projCtx.fillStyle = '#030816';
+    projCtx.fillRect(0, 0, vw, vh);
+
+    projCtx.strokeStyle = active ? '#7dd3fc' : '#6366f1';
+    projCtx.lineWidth = 8;
+    projCtx.strokeRect(8, 8, vw - 16, vh - 16);
+
+    projCtx.fillStyle = '#7dd3fc';
+    projCtx.font = '900 32px "Segoe UI", Arial, sans-serif';
+    projCtx.textAlign = 'left';
+    projCtx.fillText('БАШНЯ ПРОЕКЦИИ', 22, 50);
+
+    projCtx.fillStyle = active ? 'rgba(56, 189, 248, 0.22)' : 'rgba(15, 23, 42, 0.94)';
+    projCtx.strokeStyle = active ? '#38bdf8' : 'rgba(99, 102, 241, 0.72)';
+    projCtx.lineWidth = 3.5;
+    projCtx.fillRect(20, 68, vw - 40, 62);
+    projCtx.strokeRect(20, 68, vw - 40, 62);
+    projCtx.fillStyle = active ? '#ffffff' : '#e0e7ff';
+    projCtx.font = '900 30px monospace';
+    projCtx.textAlign = 'center';
+    projCtx.fillText(statusLabel, vw / 2, 110);
+
+    const rows = [
+      { label: 'ТИП', val: 'ДОГ. ПОСТАВКИ', col: '#ffffff' },
+      { label: 'НОМЕР', val: '№ 238', col: '#38bdf8' },
+      { label: 'ДАТА', val: '25.12.2026', col: '#e0f2fe' },
+      { label: 'ГАРАНТ', val: '650 000 ₽', col: '#fde68a' },
+    ];
+    rows.forEach((r, idx) => {
+      const ry = 194 + idx * 66;
+      projCtx.fillStyle = 'rgba(15, 23, 42, 0.96)';
+      projCtx.fillRect(20, ry - 44, vw - 40, 56);
+      projCtx.fillStyle = '#cbd5e1';
+      projCtx.font = '800 26px "Segoe UI", Arial, sans-serif';
+      projCtx.textAlign = 'left';
+      projCtx.fillText(r.label, 30, ry - 6);
+      projCtx.fillStyle = r.col;
+      projCtx.font = '900 30px monospace';
+      projCtx.textAlign = 'right';
+      projCtx.fillText(r.val, vw - 30, ry - 5);
+    });
+
+    projCtx.fillStyle = '#7dd3fc';
+    projCtx.font = '800 22px monospace';
+    projCtx.textAlign = 'center';
+    projCtx.fillText('SECUDEX // ПРОЕКТОР', vw / 2, vh - 18);
+    projCtx.restore();
+    towerAtlasCtx.drawImage(projCanvas, 1024, 0);
+    towerAtlasTex.needsUpdate = true;
+  }
+  drawProjectionTowerDisplay('ОЖИДАНИЕ', false);
 
   // Финальное объединение всей статической геометрии куба по материалам (6 draw calls вместо ~600!)
   staticRoot.updateMatrixWorld(true);
@@ -731,26 +957,28 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
     lastDrawnKey = key;
 
     const pct = telemetry.chargePct;
-    const w = storageCanvas.width;
-    const h = storageCanvas.height;
-    storageCtx.fillStyle = '#060c1a';
-    storageCtx.fillRect(0, 0, w, h);
+    const vw = 512;
+    const vh = 460;
+    storageCtx.save();
+    storageCtx.setTransform(2, 0, 0, 2, 0, 0);
+    storageCtx.fillStyle = '#030816';
+    storageCtx.fillRect(0, 0, vw, vh);
 
     storageCtx.strokeStyle = pct >= 80 ? '#f43f5e' : '#38bdf8';
-    storageCtx.lineWidth = 7;
-    storageCtx.strokeRect(8, 8, w - 16, h - 16);
+    storageCtx.lineWidth = 8;
+    storageCtx.strokeRect(8, 8, vw - 16, vh - 16);
 
     storageCtx.fillStyle = '#7dd3fc';
-    storageCtx.font = '800 26px "Segoe UI", Arial, sans-serif';
+    storageCtx.font = '900 30px "Segoe UI", Arial, sans-serif';
     storageCtx.textAlign = 'left';
-    storageCtx.fillText('ШКАЛА АНАЛИЗА И РИСКОВ', 22, 48);
+    storageCtx.fillText('ШКАЛА АНАЛИЗА И РИСКОВ', 20, 48);
 
-    storageCtx.fillStyle = pct >= 80 ? '#fda4af' : '#e0f2fe';
-    storageCtx.font = '900 84px Arial, sans-serif';
-    storageCtx.fillText(`${pct}%`, 22, 136);
+    storageCtx.fillStyle = pct >= 80 ? '#fda4af' : '#ffffff';
+    storageCtx.font = '900 92px Arial, sans-serif';
+    storageCtx.fillText(`${pct}%`, 20, 140);
 
-    const bx = 250, by = 72, bw = 232, bh = 58;
-    storageCtx.strokeStyle = 'rgba(125, 211, 252, 0.72)';
+    const bx = 256, by = 74, bw = 232, bh = 60;
+    storageCtx.strokeStyle = 'rgba(125, 211, 252, 0.85)';
     storageCtx.lineWidth = 4;
     storageCtx.strokeRect(bx, by, bw, bh);
 
@@ -759,53 +987,47 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
       const segMin = s * 20;
       const segFill = Math.min(1, Math.max(0, (pct - segMin) / 20));
       const sx = bx + 8 + s * (segW + 2);
-      storageCtx.fillStyle = 'rgba(30, 41, 59, 0.75)';
+      storageCtx.fillStyle = 'rgba(30, 41, 59, 0.88)';
       storageCtx.fillRect(sx, by + 8, segW - 2, bh - 16);
       if (segFill > 0.02) {
         storageCtx.fillStyle = s >= 4 ? '#f43f5e' : (s >= 3 ? '#a855f7' : '#38bdf8');
         storageCtx.fillRect(sx, by + 8, (segW - 2) * segFill, bh - 16);
       }
     }
-    storageCtx.fillStyle = '#94a3b8';
-    storageCtx.font = '700 13px monospace';
-    storageCtx.textAlign = 'left';
-    storageCtx.fillText('0%', bx, by + bh + 16);
-    storageCtx.textAlign = 'center';
-    storageCtx.fillText('50%', bx + bw / 2, by + bh + 16);
-    storageCtx.textAlign = 'right';
-    storageCtx.fillText('100%', bx + bw, by + bh + 16);
 
-    storageCtx.strokeStyle = 'rgba(56, 189, 248, 0.42)';
+    storageCtx.strokeStyle = 'rgba(56, 189, 248, 0.5)';
     storageCtx.lineWidth = 3;
     storageCtx.beginPath();
-    storageCtx.moveTo(22, 162); storageCtx.lineTo(w - 22, 162);
+    storageCtx.moveTo(20, 162); storageCtx.lineTo(vw - 20, 162);
     storageCtx.stroke();
 
     const rows = [
       { label: 'IDX-S', val: telemetry.indexCoeff.toFixed(2), color: '#38bdf8' },
-      { label: 'К-РИСК', val: telemetry.riskCoeff.toFixed(2), color: pct >= 60 ? '#fb7185' : '#fcd34d' },
-      { label: 'ЛИСТЫ', val: `${telemetry.storedCount}/${telemetry.totalCount}`, color: '#f8fafc' },
-      { label: 'ПОТОК', val: `${telemetry.flowMbps} MB/s`, color: '#c4b5fd' },
+      { label: 'К-РИСК', val: telemetry.riskCoeff.toFixed(2), color: pct >= 60 ? '#fb7185' : '#fde047' },
+      { label: 'ЛИСТЫ', val: `${telemetry.storedCount}/${telemetry.totalCount}`, color: '#ffffff' },
+      { label: 'ПОТОК', val: `${telemetry.flowMbps} MB/s`, color: '#e9d5ff' },
     ];
     rows.forEach((r, idx) => {
-      const ry = 212 + idx * 54;
-      storageCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-      storageCtx.fillRect(22, ry - 36, w - 44, 46);
-      storageCtx.fillStyle = '#cbd5e1';
-      storageCtx.font = '800 28px "Segoe UI", Arial, sans-serif';
+      const ry = 220 + idx * 54;
+      storageCtx.fillStyle = 'rgba(15, 23, 42, 0.96)';
+      storageCtx.fillRect(20, ry - 40, vw - 40, 48);
+      storageCtx.fillStyle = '#f1f5f9';
+      storageCtx.font = '800 30px "Segoe UI", Arial, sans-serif';
       storageCtx.textAlign = 'left';
-      storageCtx.fillText(r.label, 34, ry - 4);
+      storageCtx.fillText(r.label, 30, ry - 6);
       storageCtx.fillStyle = r.color;
-      storageCtx.font = '900 31px monospace';
+      storageCtx.font = '900 34px monospace';
       storageCtx.textAlign = 'right';
-      storageCtx.fillText(r.val, w - 34, ry - 3);
+      storageCtx.fillText(r.val, vw - 30, ry - 5);
     });
 
-    storageCtx.fillStyle = pct >= 100 ? '#fb7185' : '#7dd3fc';
-    storageCtx.font = '800 22px monospace';
+    storageCtx.fillStyle = pct >= 100 ? '#fda4af' : '#7dd3fc';
+    storageCtx.font = '900 25px monospace';
     storageCtx.textAlign = 'center';
-    storageCtx.fillText(telemetry.statusLabel, w / 2, h - 22);
-    storageTex.needsUpdate = true;
+    storageCtx.fillText(telemetry.statusLabel, vw / 2, vh - 18);
+    storageCtx.restore();
+    towerAtlasCtx.drawImage(storageCanvas, 0, 0);
+    towerAtlasTex.needsUpdate = true;
   }
 
   function updateStorageDisplay(telemetry) {
@@ -854,6 +1076,12 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
     statusLabel: 'ОЖИДАНИЕ',
   });
 
+  function updateBufferZones(t, pulseLeft = 0.35, pulseRight = 0.35) {
+    bufferZoneEnergyMat.uniforms.uTime.value = t;
+    bufferZoneEnergyMat.uniforms.uPulseLeft.value = pulseLeft;
+    bufferZoneEnergyMat.uniforms.uPulseRight.value = pulseRight;
+  }
+
   return {
     cubeGroup,
     updateEmitters,
@@ -863,6 +1091,8 @@ export function createCubeRig(scene, maxAnisotropy, metalTex, metalNormalTex) {
     setVaultSlotLit,
     updateStorageDisplay,
     drawStorageTelemetry,
+    drawProjectionTowerDisplay,
+    updateBufferZones,
     rightCamLens,
     rightCamLensMat,
     updateRearTunnel: rearTunnel.updateTunnel,

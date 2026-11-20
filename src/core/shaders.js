@@ -5,8 +5,9 @@ export const CinemaOpticsShader = {
     tDiffuse: { value: null },
     uTime: { value: 0 },
     uChroma: { value: 0 },
-    uVignette: { value: 0.10 },
+    uVignette: { value: 0.14 },
     uGrain: { value: 0 },
+    uAnamorphic: { value: 0 },
   },
   vertexShader: `
     varying vec2 vUv;
@@ -21,6 +22,7 @@ export const CinemaOpticsShader = {
     uniform float uChroma;
     uniform float uVignette;
     uniform float uGrain;
+    uniform float uAnamorphic;
     varying vec2 vUv;
     void main() {
       vec2 dir = vUv - 0.5;
@@ -33,7 +35,16 @@ export const CinemaOpticsShader = {
         col.b = texture2D(tDiffuse, vUv + shift).b;
       }
 
-      float vig = 1.0 - smoothstep(0.28, 0.88, distSq) * uVignette;
+      if (uAnamorphic > 0.001) {
+        vec3 s1 = texture2D(tDiffuse, clamp(vUv + vec2(0.008, 0.0), 0.0, 1.0)).rgb;
+        vec3 s2 = texture2D(tDiffuse, clamp(vUv - vec2(0.008, 0.0), 0.0, 1.0)).rgb;
+        vec3 s3 = texture2D(tDiffuse, clamp(vUv + vec2(0.018, 0.0), 0.0, 1.0)).rgb;
+        vec3 s4 = texture2D(tDiffuse, clamp(vUv - vec2(0.018, 0.0), 0.0, 1.0)).rgb;
+        vec3 bright = max(vec3(0.0), (s1 + s2 + s3 + s4) * 0.25 - vec3(0.98));
+        col += bright * vec3(0.32, 0.72, 1.0) * uAnamorphic;
+      }
+
+      float vig = 1.0 - smoothstep(0.26, 0.92, distSq) * uVignette;
       col *= vig;
 
       if (uGrain > 0.00001) {
@@ -44,6 +55,48 @@ export const CinemaOpticsShader = {
     }
   `,
 };
+
+export function createBufferZoneEnergyMat(colorHex = 0x38bdf8, flowDir = 1.0) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Color(colorHex) },
+      uTime: { value: 0 },
+      uPulse: { value: 0.35 },
+      uFlowDir: { value: flowDir },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      varying vec3 vPos;
+      void main() {
+        vUv = uv;
+        vPos = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uColor;
+      uniform float uTime;
+      uniform float uPulse;
+      uniform float uFlowDir;
+      varying vec2 vUv;
+      varying vec3 vPos;
+      void main() {
+        float gridX = smoothstep(0.92, 0.99, abs(sin(vPos.x * 9.5)));
+        float gridY = smoothstep(0.92, 0.99, abs(sin(vPos.y * 9.5)));
+        float diagWave = pow(0.5 + 0.5 * sin((vPos.x * uFlowDir * 4.2 + vPos.y * 4.6) - uTime * 3.8), 4.0);
+        float rim = smoothstep(0.0, 0.14, vUv.x) * smoothstep(1.0, 0.86, vUv.x);
+        float chev = pow(0.5 + 0.5 * sin((vPos.y * 7.5 - abs(vPos.x) * 3.0 * uFlowDir) - uTime * 4.5), 6.0);
+        vec3 col = mix(uColor, vec3(0.88, 0.97, 1.0), clamp(diagWave * 0.65 + chev * 0.45, 0.0, 1.0));
+        float alpha = (0.14 + (gridX + gridY) * 0.12 + diagWave * 0.24 + chev * 0.22) * (0.45 + uPulse * 0.75) * (0.4 + 0.6 * rim);
+        gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.78));
+      }
+    `,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+}
 
 export function createVolumetricBeamMat(colorHex, power, opacity, useMap, speed, polarPlasmaTex) {
   return new THREE.ShaderMaterial({
@@ -98,7 +151,7 @@ export function createVolumetricBeamMat(colorHex, power, opacity, useMap, speed,
   });
 }
 
-export function createTransferPlasmaMat(colorHex) {
+export function createTransferPlasmaMat(colorHex = 0x38bdf8) {
   return new THREE.ShaderMaterial({
     uniforms: {
       uColor: { value: new THREE.Color(colorHex) },
@@ -106,11 +159,17 @@ export function createTransferPlasmaMat(colorHex) {
       uOpacity: { value: 0 },
     },
     vertexShader: `
+      attribute vec3 aStreamColor;
+      attribute float aStreamPhase;
       varying vec2 vUv;
       varying vec3 vNormalView;
       varying vec3 vViewDir;
+      varying vec3 vStreamColor;
+      varying float vPhase;
       void main() {
         vUv = uv;
+        vStreamColor = aStreamColor;
+        vPhase = aStreamPhase;
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
         vNormalView = normalize(normalMatrix * normal);
         vViewDir = normalize(-mvPosition.xyz);
@@ -118,19 +177,21 @@ export function createTransferPlasmaMat(colorHex) {
       }
     `,
     fragmentShader: `
-      uniform vec3 uColor;
       uniform float uTime;
       uniform float uOpacity;
       varying vec2 vUv;
       varying vec3 vNormalView;
       varying vec3 vViewDir;
+      varying vec3 vStreamColor;
+      varying float vPhase;
       void main() {
         float fresnel = pow(abs(dot(normalize(vNormalView), normalize(vViewDir))), 1.35);
         float endFade = smoothstep(0.0, 0.08, vUv.x) * smoothstep(1.0, 0.90, vUv.x);
-        float wave1 = pow(0.5 + 0.5 * sin((vUv.x * 3.4 - uTime * 2.6) * 6.28318), 4.0);
-        float wave2 = pow(0.5 + 0.5 * sin((vUv.x * 7.0 - uTime * 4.1 + 1.4) * 6.28318), 6.0);
+        float tt = uTime + vPhase;
+        float wave1 = pow(0.5 + 0.5 * sin((vUv.x * 3.4 - tt * 2.6) * 6.28318), 4.0);
+        float wave2 = pow(0.5 + 0.5 * sin((vUv.x * 7.0 - tt * 4.1 + 1.4) * 6.28318), 6.0);
         float coreLine = 0.24 + wave1 * 0.95 + wave2 * 0.65;
-        vec3 col = mix(uColor, vec3(0.92, 0.98, 1.0), clamp(wave1 * 0.65 + wave2 * 0.45, 0.0, 1.0));
+        vec3 col = mix(vStreamColor, vec3(0.92, 0.98, 1.0), clamp(wave1 * 0.65 + wave2 * 0.45, 0.0, 1.0));
         float alpha = fresnel * endFade * coreLine * uOpacity;
         gl_FragColor = vec4(col * alpha, alpha);
       }
@@ -235,9 +296,9 @@ export function createCubeGlassMat() {
       varying vec3 vViewDir;
       void main() {
         float ndotv = abs(dot(normalize(vNormalView), normalize(vViewDir)));
-        float fresnel = pow(1.0 - clamp(ndotv, 0.0, 1.0), 2.2);
-        vec3 col = mix(uBaseColor, uRimColor, fresnel * 0.85);
-        float alpha = 0.042 + fresnel * 0.14;
+        float fresnel = pow(1.0 - clamp(ndotv, 0.0, 1.0), 2.4);
+        vec3 col = mix(uBaseColor, uRimColor, fresnel * 0.9);
+        float alpha = 0.004 + fresnel * 0.15;
         gl_FragColor = vec4(col, alpha);
       }
     `,

@@ -138,12 +138,12 @@ export function getBriefProjectionState(progress, isMobileOrOut = false, maybeOu
   out.frameAlpha = frameIn * fadeOut;
   out.rayOpacity = Math.min(1, p / 0.12) * fadeOut;
 
-  const startX = isMobile ? 1.85 : 2.95;
-  const targetX = isMobile ? 0.38 : 1.85;
-  const startY = isMobile ? 2.25 : 1.65;
-  const targetY = isMobile ? 1.35 : 1.05;
+  const startX = isMobile ? 1.95 : 2.95;
+  const targetX = isMobile ? 0.25 : 2.35;
+  const startY = isMobile ? 2.40 : 1.85;
+  const targetY = isMobile ? 0.15 : 0.25;
   const startZ = 0.95;
-  const targetZ = isMobile ? 9.6 : 8.2;
+  const targetZ = isMobile ? 9.1 : 8.0;
 
   out.posX = startX + (targetX - startX) * approachEase;
   out.posY = startY + (targetY - startY) * approachEase;
@@ -219,29 +219,86 @@ export function computeDataStreamPoint(
   return out;
 }
 
-export function computeCinemaOptics(stage, camDistance, isWarpActive = false, out = {
+export function computeCinemaOptics(stage, camDistance, isWarpActive = false, outOrProfile = {
   focus: 17.6,
   aperture: 0,
   bloomStrength: 0.14,
   chromaAmount: 0,
-}) {
+  anamorphicAmount: 0,
+}, maybeProfile = null) {
+  const isProfileObj = outOrProfile && 'tier' in outOrProfile;
+  const profile = isProfileObj ? outOrProfile : maybeProfile;
+  const out = isProfileObj ? {
+    focus: 17.6,
+    aperture: 0,
+    bloomStrength: 0.14,
+    chromaAmount: 0,
+    anamorphicAmount: 0,
+  } : outOrProfile;
+
   const safeDist = Number.isFinite(camDistance) ? camDistance : 17.6;
   out.focus = Math.min(160, Math.max(3.5, safeDist));
 
   // Полностью отключаем DOF, чтобы все сцены (включая окно юриста и договор) оставались кристально резкими
   out.aperture = 0;
 
+  let baseBloom = 0.13;
   if (stage === STAGES.POWERDOWN) {
-    out.bloomStrength = 0.08;
+    baseBloom = 0.08;
   } else if (stage === STAGES.ANALYSIS || stage === STAGES.VERDICT || stage === STAGES.BEAM_ASCENT) {
-    out.bloomStrength = 0.20;
+    baseBloom = 0.20;
   } else if (stage === STAGES.CONTRACT_DROP || stage === STAGES.CONTRACT_BRIEF || stage === STAGES.SCAN || stage === STAGES.TRANSFER) {
-    out.bloomStrength = 0.14;
-  } else {
-    out.bloomStrength = 0.13;
+    baseBloom = 0.14;
   }
 
-  out.chromaAmount = isWarpActive ? 0.0009 : 0;
+  const bloomScale = profile?.bloomStrengthScale ?? 1.0;
+  out.bloomStrength = Number((baseBloom * bloomScale).toFixed(3));
+  out.chromaAmount = isWarpActive ? 0.0011 : (stage === STAGES.VERDICT || stage === STAGES.BEAM_ASCENT ? 0.00028 : 0);
+
+  const allowAnamorphic = profile?.anamorphicStreak ?? false;
+  if (!allowAnamorphic) {
+    out.anamorphicAmount = 0;
+  } else if (stage === STAGES.VERDICT || stage === STAGES.BEAM_ASCENT || stage === STAGES.WINDOW_RUSH) {
+    out.anamorphicAmount = 0.34;
+  } else if (stage === STAGES.ANALYSIS || stage === STAGES.TRANSFER || stage === STAGES.CONTRACT_BRIEF) {
+    out.anamorphicAmount = 0.22;
+  } else {
+    out.anamorphicAmount = 0.12;
+  }
+  return out;
+}
+
+export function getTransferRiskCardState(progress, cardIndex, totalCards = 5, out = {
+  visible: false,
+  curveT: 0,
+  scale: 0.3,
+  opacity: 0,
+  absorbPulse: 0,
+}) {
+  const p = Math.min(1, Math.max(0, progress));
+  const staggerSpan = 0.42;
+  const flightDur = 0.52;
+  const start = (cardIndex / Math.max(1, totalCards - 1)) * staggerSpan;
+  const local = (p - start) / flightDur;
+
+  if (local <= 0 || local >= 1) {
+    out.visible = false;
+    out.curveT = local >= 1 ? 1 : 0;
+    out.scale = local >= 1 ? 0.18 : 0.3;
+    out.opacity = 0;
+    out.absorbPulse = (local >= 0.88 && local <= 1.15) ? Math.sin(Math.min(1, (local - 0.88) / 0.27) * Math.PI) : 0;
+    return out;
+  }
+
+  const ease = local * local * (3 - 2 * local);
+  const fadeIn = Math.min(1, local / 0.18);
+  const fadeOut = local > 0.78 ? Math.max(0, 1 - (local - 0.78) / 0.22) : 1;
+
+  out.visible = true;
+  out.curveT = ease;
+  out.scale = 0.38 + Math.sin(ease * Math.PI) * 0.72;
+  out.opacity = fadeIn * fadeOut;
+  out.absorbPulse = local >= 0.82 ? Math.sin(((local - 0.82) / 0.18) * Math.PI) : 0;
   return out;
 }
 

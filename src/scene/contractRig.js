@@ -24,46 +24,51 @@ function createPageEdgesTex() {
 
 function renderContractPageTexture(pageData, totalPages, maxAnisotropy) {
   const c = document.createElement('canvas');
-  c.width = 1536;
-  c.height = 2176;
+  c.width = 2048;
+  c.height = 2896;
   const ctx = c.getContext('2d');
   const w = c.width;
   const h = c.height;
 
+  ctx.save();
+  ctx.scale(2048 / 1536, 2896 / 2176);
+  const vw = 1536;
+  const vh = 2176;
+
   // Чистая матовая архивная бумага высокой чёткости без шумового зерна
-  const grad = ctx.createLinearGradient(0, 0, w, h);
-  grad.addColorStop(0, '#f7f4ec');
-  grad.addColorStop(0.55, '#f0eadc');
-  grad.addColorStop(1, '#e6decb');
+  const grad = ctx.createLinearGradient(0, 0, vw, vh);
+  grad.addColorStop(0, '#fbf9f4');
+  grad.addColorStop(0.55, '#f4efe3');
+  grad.addColorStop(1, '#eae3d3');
   ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, w, h);
+  ctx.fillRect(0, 0, vw, vh);
 
   ctx.save();
-  ctx.translate(w / 2, h / 2);
+  ctx.translate(vw / 2, vh / 2);
   ctx.rotate(-0.55);
-  ctx.fillStyle = 'rgba(30, 58, 138, 0.045)';
+  ctx.fillStyle = 'rgba(30, 58, 138, 0.022)';
   ctx.font = '900 162px "Segoe UI", Arial, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText('SECUDEX AUDIT', 0, -205);
   ctx.fillText('884-СД // LEGAL', 0, 235);
   ctx.restore();
 
-  ctx.strokeStyle = '#050811';
-  ctx.lineWidth = 6;
-  ctx.strokeRect(58, 58, w - 116, h - 116);
-  ctx.lineWidth = 2.5;
-  ctx.strokeRect(76, 76, w - 152, h - 152);
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 7;
+  ctx.strokeRect(58, 58, vw - 116, vh - 116);
+  ctx.lineWidth = 3;
+  ctx.strokeRect(76, 76, vw - 152, vh - 152);
 
   const tabY = 268 + (pageData.pageNum - 1) * 276;
   ctx.fillStyle = '#0f172a';
-  ctx.fillRect(w - 94, tabY, 94, 198);
+  ctx.fillRect(vw - 94, tabY, 94, 198);
   ctx.fillStyle = '#38bdf8';
-  ctx.fillRect(w - 94, tabY, 10, 198);
+  ctx.fillRect(vw - 94, tabY, 10, 198);
   ctx.save();
-  ctx.translate(w - 44, tabY + 99);
+  ctx.translate(vw - 44, tabY + 99);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillStyle = '#f8fafc';
-  ctx.font = '800 31px monospace';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '900 34px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(`ЛИСТ 0${pageData.pageNum}`, 0, 0);
@@ -72,46 +77,46 @@ function renderContractPageTexture(pageData, totalPages, maxAnisotropy) {
   for (let r = 0; r < 6; r++) {
     for (let col = 0; col < 6; col++) {
       if ((r * 7 + col * 3 + pageData.pageNum) % 2 === 0) {
-        ctx.fillStyle = '#050811';
-        ctx.fillRect(w - 226 + col * 18, 108 + r * 18, 13, 13);
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(vw - 226 + col * 18, 108 + r * 18, 13, 13);
       }
     }
   }
-  ctx.fillStyle = '#1e293b';
-  ctx.font = '800 24px monospace';
+  ctx.fillStyle = '#000000';
+  ctx.font = '900 28px monospace';
   ctx.textAlign = 'left';
   ctx.fillText(`DOC:238-P${pageData.pageNum}`, 114, 138);
 
-  ctx.fillStyle = '#050811';
+  ctx.fillStyle = '#000000';
   ctx.textAlign = 'center';
-  ctx.font = '800 56px "Segoe UI", Arial, sans-serif';
-  ctx.fillText(pageData.header, w / 2 - 18, 224);
+  ctx.font = '900 62px "Segoe UI", Arial, sans-serif';
+  ctx.fillText(pageData.header, vw / 2 - 18, 224);
 
-  ctx.font = '700 31px "Segoe UI", Arial, sans-serif';
-  ctx.fillStyle = '#1e293b';
+  ctx.font = '800 36px "Segoe UI", Arial, sans-serif';
+  ctx.fillStyle = '#0f172a';
   ctx.fillText(
-    `Договор поставки № 238 от 25.12.2026г • Гарантия 650 000 ₽ • Стр. ${pageData.pageNum}/${totalPages}`,
-    w / 2 - 18,
+    `Договор поставки № 238 от 25.12.2026г • 650 000 ₽ • Стр. ${pageData.pageNum}/${totalPages}`,
+    vw / 2 - 18,
     292
   );
 
-  ctx.strokeStyle = 'rgba(5, 8, 17, 0.62)';
-  ctx.lineWidth = 4.5;
+  ctx.strokeStyle = '#020617';
+  ctx.lineWidth = 5;
   ctx.beginPath();
   ctx.moveTo(120, 336);
-  ctx.lineTo(w - 152, 336);
+  ctx.lineTo(vw - 152, 336);
   ctx.stroke();
 
   ctx.textAlign = 'left';
   const bodyLines = [
-    '§ 1. ОБЩИЕ ПОЛОЖЕНИЯ И ЗАЩИТНЫЙ КОНТУР:',
-    'Лист договора передаётся в контур верификации для извлечения ключевых обязательств.',
+    '§ 1. ОБЩИЕ ПОЛОЖЕНИЯ И КОНТУР:',
+    'Лист передаётся в ИИ-контур для извлечения обязательств.',
     '',
     `§ 2. КЛЮЧЕВОЙ ПУНКТ (${pageData.riskCode}):`,
     pageData.clause,
     '',
-    '§ 3. РЕГЛАМЕНТ ОТВЕТСТВЕННОСТИ И СИНХРОНИЗАЦИИ:',
-    'Условия скрепляются крипто-слепком и проверяются ИИ-агентами перед передачей Флагману.',
+    '§ 3. ОТВЕТСТВЕННОСТЬ И АРХИВ:',
+    'Данные проверяются ИИ-агентами перед передачей Флагману.',
   ];
   let y = 418;
   bodyLines.forEach((line, idx) => {
@@ -119,39 +124,39 @@ function renderContractPageTexture(pageData, totalPages, maxAnisotropy) {
     const isRiskBody = idx === 4;
     const isSectionHead = idx === 0 || idx === 6;
     ctx.font = (isRiskTitle || isRiskBody || isSectionHead)
-      ? '800 41px "Segoe UI", Arial, sans-serif'
-      : '600 37px "Segoe UI", Arial, sans-serif';
-    ctx.fillStyle = isRiskTitle ? '#9f1239' : '#050811';
+      ? '900 47px "Segoe UI", Arial, sans-serif'
+      : '800 43px "Segoe UI", Arial, sans-serif';
+    ctx.fillStyle = isRiskTitle ? '#881337' : '#000000';
     const words = line.split(' ');
     let cur = '';
     for (const word of words) {
-      if ((cur + word).length > 38) {
+      if ((cur + word).length > 33) {
         ctx.fillText(cur.trim(), 124, y);
         cur = word + ' ';
-        y += 58;
+        y += 62;
       } else {
         cur += word + ' ';
       }
     }
     if (cur.trim()) ctx.fillText(cur.trim(), 124, y);
-    y += line ? 68 : 26;
+    y += line ? 72 : 24;
   });
 
-  ctx.fillStyle = 'rgba(225, 29, 72, 0.14)';
-  ctx.strokeStyle = 'rgba(190, 18, 60, 0.88)';
-  ctx.lineWidth = 5.5;
-  ctx.fillRect(120, 1292, w - 260, 232);
-  ctx.strokeRect(120, 1292, w - 260, 232);
+  ctx.fillStyle = 'rgba(225, 29, 72, 0.16)';
+  ctx.strokeStyle = '#9f1239';
+  ctx.lineWidth = 6.5;
+  ctx.fillRect(120, 1292, vw - 260, 240);
+  ctx.strokeRect(120, 1292, vw - 260, 240);
   ctx.fillStyle = '#881337';
-  ctx.font = '800 36px monospace';
-  ctx.fillText(`ИИ-ДЕТЕКТОР УГРОЗ • ${pageData.riskCode} • [${pageData.severity}]`, 156, 1364);
-  ctx.fillStyle = '#050811';
-  ctx.font = '800 41px "Segoe UI", Arial, sans-serif';
-  ctx.fillText(pageData.riskText, 156, 1448);
+  ctx.font = '900 42px monospace';
+  ctx.fillText(`УГРОЗА • ${pageData.riskCode} • [${pageData.severity}]`, 156, 1368);
+  ctx.fillStyle = '#000000';
+  ctx.font = '900 46px "Segoe UI", Arial, sans-serif';
+  ctx.fillText(pageData.riskText, 156, 1456);
 
   ctx.save();
   ctx.translate(364, 1824);
-  ctx.strokeStyle = 'rgba(29, 78, 216, 0.94)';
+  ctx.strokeStyle = 'rgba(29, 78, 216, 0.96)';
   ctx.lineWidth = 7.5;
   ctx.beginPath();
   ctx.arc(0, 0, 124, 0, Math.PI * 2);
@@ -162,11 +167,11 @@ function renderContractPageTexture(pageData, totalPages, maxAnisotropy) {
   ctx.arc(0, 0, 106, 0, Math.PI * 2);
   ctx.stroke();
   ctx.setLineDash([]);
-  ctx.font = '800 31px "Segoe UI", Arial, sans-serif';
+  ctx.font = '800 32px "Segoe UI", Arial, sans-serif';
   ctx.fillStyle = 'rgba(29, 78, 216, 0.98)';
   ctx.textAlign = 'center';
   ctx.fillText('SECUDEX', 0, -12);
-  ctx.font = '800 24px monospace';
+  ctx.font = '800 26px monospace';
   ctx.fillText(`ЛИСТ 0${pageData.pageNum}/0${totalPages}`, 0, 26);
   ctx.restore();
 
@@ -178,10 +183,11 @@ function renderContractPageTexture(pageData, totalPages, maxAnisotropy) {
   ctx.bezierCurveTo(1256, 1748, 1290, 1808, 1338, 1790);
   ctx.stroke();
 
-  ctx.fillStyle = '#1e293b';
-  ctx.font = '800 29px monospace';
+  ctx.fillStyle = '#0f172a';
+  ctx.font = '800 31px monospace';
   ctx.textAlign = 'right';
-  ctx.fillText(`Стр. ${pageData.pageNum} / ${totalPages}`, w - 134, h - 104);
+  ctx.fillText(`Стр. ${pageData.pageNum} / ${totalPages}`, vw - 134, vh - 104);
+  ctx.restore();
 
   const tex = new THREE.CanvasTexture(c);
   return configureCrispTexture(tex, maxAnisotropy, true);
@@ -255,7 +261,7 @@ export function createContractRig(scene, maxAnisotropy) {
     map: pageTextures[0],
     emissive: 0xf4efe4,
     emissiveMap: pageTextures[0],
-    emissiveIntensity: 0.075,
+    emissiveIntensity: 0.045,
     roughness: 0.96,
     metalness: 0.0,
     transparent: true,
@@ -291,7 +297,7 @@ export function createContractRig(scene, maxAnisotropy) {
     map: pageTextures[1] || archiveCompleteTex,
     emissive: 0xf4efe4,
     emissiveMap: pageTextures[1] || archiveCompleteTex,
-    emissiveIntensity: 0.07,
+    emissiveIntensity: 0.04,
     roughness: 0.96,
     metalness: 0.0,
     side: THREE.DoubleSide,

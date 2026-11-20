@@ -60,15 +60,16 @@ function buildStudioSoftboxEnv(renderer) {
   return rt.texture;
 }
 
-export function initSceneRenderer(container, isMobile, isSoftwareGl) {
+export function initSceneRenderer(container, deviceProfile, isSoftwareGl) {
+  const isMobile = Boolean(deviceProfile?.isMobileLayout);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x030109);
-  scene.fog = new THREE.FogExp2(0x030109, 0.011);
+  scene.fog = new THREE.FogExp2(0x030109, 0.0105);
 
-  const camera = new THREE.PerspectiveCamera(isMobile ? 56 : 48, window.innerWidth / window.innerHeight, 0.1, 360);
+  const camera = new THREE.PerspectiveCamera(isMobile ? 56 : 48, window.innerWidth / window.innerHeight, 0.1, 380);
   camera.position.set(0, -0.1, isMobile ? 22.8 : 17.6);
 
-  const maxDpr = isMobile ? 1.25 : 1.5;
+  const maxDpr = deviceProfile?.maxDpr ?? (isMobile ? 1.25 : 1.5);
   const getTargetDpr = () => (isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, maxDpr));
   let activeDpr = getTargetDpr();
 
@@ -79,7 +80,7 @@ export function initSceneRenderer(container, isMobile, isSoftwareGl) {
   renderer.shadowMap.enabled = false;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.04;
+  renderer.toneMappingExposure = 1.06;
   renderer.setPixelRatio(activeDpr);
   renderer.setSize(window.innerWidth, window.innerHeight);
   container.appendChild(renderer.domElement);
@@ -112,13 +113,15 @@ export function initSceneRenderer(container, isMobile, isSoftwareGl) {
   let composer = null;
   let bloomPass = null;
   let cinemaOpticsPass = null;
-  const opticsState = { focus: 16.5, aperture: 0, bloomStrength: 0.14, chromaAmount: 0 };
-  const sceneStats = { calls: 0, triangles: 0, dpr: activeDpr };
+  const opticsState = { focus: 16.5, aperture: 0, bloomStrength: 0.14, chromaAmount: 0, anamorphicAmount: 0 };
+  const sceneStats = { calls: 0, triangles: 0, dpr: activeDpr, tierLabel: deviceProfile?.label || 'Стандарт' };
+  const bloomScale = deviceProfile?.bloomResolutionScale ?? 0.5;
 
   if (!isSoftwareGl) {
     const w = Math.max(1, window.innerWidth);
     const h = Math.max(1, window.innerHeight);
-    const maxSamples = renderer.capabilities.isWebGL2 ? Math.min(4, renderer.capabilities.maxSamples || 4) : 0;
+    const tierSamples = deviceProfile?.msaaSamples ?? 4;
+    const maxSamples = renderer.capabilities.isWebGL2 ? Math.min(tierSamples, renderer.capabilities.maxSamples || tierSamples) : 0;
 
     const rt = new THREE.WebGLRenderTarget(Math.floor(w * activeDpr), Math.floor(h * activeDpr), {
       type: THREE.HalfFloatType,
@@ -141,14 +144,14 @@ export function initSceneRenderer(container, isMobile, isSoftwareGl) {
     };
     composer.addPass(renderPass);
 
-    // Половинное разрешение прохода размытия Bloom (0.5x) при сохранении яркости и радиуса свечения
-    const bloomW = Math.max(1, Math.floor(w * activeDpr * 0.5));
-    const bloomH = Math.max(1, Math.floor(h * activeDpr * 0.5));
+    const bloomW = Math.max(1, Math.floor(w * activeDpr * bloomScale));
+    const bloomH = Math.max(1, Math.floor(h * activeDpr * bloomScale));
     bloomPass = new UnrealBloomPass(new THREE.Vector2(bloomW, bloomH), 0.12, 0.12, 1.45);
     composer.addPass(bloomPass);
     bloomPass.setSize(bloomW, bloomH);
 
     cinemaOpticsPass = new ShaderPass(CinemaOpticsShader);
+    cinemaOpticsPass.uniforms.uGrain.value = deviceProfile?.cinemaGrain ?? 0;
     composer.addPass(cinemaOpticsPass);
     composer.addPass(new OutputPass());
   }
@@ -156,13 +159,15 @@ export function initSceneRenderer(container, isMobile, isSoftwareGl) {
   function updatePostProcessing(stage, warpActive, elapsedSec) {
     if (!composer) return;
     const camDist = camera.position.distanceTo(controls.target);
-    computeCinemaOptics(stage, camDist, warpActive, opticsState);
+    computeCinemaOptics(stage, camDist, warpActive, opticsState, deviceProfile);
     if (bloomPass) {
       bloomPass.strength = opticsState.bloomStrength;
     }
     if (cinemaOpticsPass) {
       cinemaOpticsPass.uniforms.uTime.value = elapsedSec;
       cinemaOpticsPass.uniforms.uChroma.value = opticsState.chromaAmount;
+      cinemaOpticsPass.uniforms.uGrain.value = deviceProfile?.cinemaGrain ?? 0;
+      cinemaOpticsPass.uniforms.uAnamorphic.value = opticsState.anamorphicAmount;
     }
   }
 
@@ -179,8 +184,8 @@ export function initSceneRenderer(container, isMobile, isSoftwareGl) {
       composer.setPixelRatio(activeDpr);
       composer.setSize(w, h);
       if (bloomPass) {
-        const bloomW = Math.max(1, Math.floor(w * activeDpr * 0.5));
-        const bloomH = Math.max(1, Math.floor(h * activeDpr * 0.5));
+        const bloomW = Math.max(1, Math.floor(w * activeDpr * bloomScale));
+        const bloomH = Math.max(1, Math.floor(h * activeDpr * bloomScale));
         bloomPass.setSize(bloomW, bloomH);
       }
     }

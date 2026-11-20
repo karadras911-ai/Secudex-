@@ -128,22 +128,25 @@ function createBeveledTechPlateGeometry(w, h, depth) {
 
 function createSharedCodeLayerTex(maxAnisotropy) {
   const c = document.createElement('canvas');
-  c.width = 1024; c.height = 512;
+  c.width = 2048; c.height = 1024;
   const ctx = c.getContext('2d');
+  ctx.save();
+  ctx.scale(2, 2);
   ctx.fillStyle = 'rgba(4, 7, 16, 0.18)';
   ctx.fillRect(0, 0, 1024, 512);
-  ctx.font = 'bold 11px monospace';
+  ctx.font = 'bold 12px monospace';
   const tokens = [
     '0xA4F9::CLAUSE_VERIFY', 'RISK_EVAL => 0.841', 'AST_LEGAL_NODE[2.1]',
     'SHA3:99F1_QUANTUM', 'TRAP_GUARD_ACTIVE', 'WEIGHT_SIGMA:0.924',
     'MEM_BANK[4096x64]', 'AGENT_SYNC_STREAM()', 'SECUDEX_PROTOCOL_V9',
   ];
   for (let row = 0; row < 28; row++) {
-    ctx.fillStyle = row % 4 === 0 ? '#e0f2fe' : 'rgba(148, 163, 184, 0.62)';
+    ctx.fillStyle = row % 4 === 0 ? '#f0f9ff' : 'rgba(186, 230, 253, 0.72)';
     const line = `${tokens[row % tokens.length]}  // ${Math.random().toString(16).slice(2, 10).toUpperCase()}  [${(row * 17) % 99}]`;
     ctx.fillText(line, (row * 43) % 240, 14 + row * 18);
     ctx.fillText(line, ((row * 43) % 240) + 512, 14 + row * 18);
   }
+  ctx.restore();
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   return configureCrispTexture(tex, maxAnisotropy, true);
@@ -151,9 +154,11 @@ function createSharedCodeLayerTex(maxAnisotropy) {
 
 function createSharedRingBandTex(maxAnisotropy) {
   const ringBandCanvas = document.createElement('canvas');
-  ringBandCanvas.width = 1024; ringBandCanvas.height = 128;
+  ringBandCanvas.width = 2048; ringBandCanvas.height = 256;
   const rbCtx = ringBandCanvas.getContext('2d');
-  rbCtx.clearRect(0, 0, 1024, 128);
+  rbCtx.clearRect(0, 0, 2048, 256);
+  rbCtx.save();
+  rbCtx.scale(2, 2);
   for (let x = 0; x < 1024; x += 16) {
     const tall = x % 64 === 0 ? 52 : (x % 32 === 0 ? 34 : 18);
     rbCtx.fillStyle = x % 64 === 0 ? '#ffffff' : '#bae6fd';
@@ -161,8 +166,9 @@ function createSharedRingBandTex(maxAnisotropy) {
   }
   rbCtx.strokeStyle = '#e0f2fe'; rbCtx.lineWidth = 3;
   rbCtx.beginPath(); rbCtx.moveTo(0, 20); rbCtx.lineTo(1024, 20); rbCtx.moveTo(0, 108); rbCtx.lineTo(1024, 108); rbCtx.stroke();
-  rbCtx.fillStyle = '#f8fafc'; rbCtx.font = 'bold 14px monospace';
+  rbCtx.fillStyle = '#ffffff'; rbCtx.font = 'bold 14px monospace';
   for (let s = 0; s < 4; s++) rbCtx.fillText(`DATA_BUS::0${s + 1} // SYNC_OK`, 28 + s * 256, 15);
+  rbCtx.restore();
 
   const dataRingTex = new THREE.CanvasTexture(ringBandCanvas);
   dataRingTex.wrapS = THREE.RepeatWrapping;
@@ -667,7 +673,7 @@ export function createAiSphereRig(scene, maxAnisotropy, dataPointSpriteTex) {
 
       verdictHoloPlaneMat = new THREE.MeshBasicMaterial({
         map: verdictTex, transparent: true, opacity: 0.96,
-        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
       });
       const verdictHoloPlane = new THREE.Mesh(
         new THREE.PlaneGeometry(radius * 2.5, radius * 0.92),

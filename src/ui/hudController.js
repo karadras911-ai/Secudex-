@@ -26,6 +26,7 @@ export function createHudController({ state, onEnterStage, voicePlayer }) {
   const perfWrapEl = document.getElementById('perf-diag-wrap');
   const perfBtnEl = document.getElementById('perf-diag-btn');
   const perfFpsPillEl = document.getElementById('perf-fps-pill');
+  const perfTierEl = document.getElementById('perf-tier');
   const perfFpsEl = document.getElementById('perf-fps');
   const perfCallsEl = document.getElementById('perf-calls');
   const perfTrisEl = document.getElementById('perf-tris');
@@ -208,13 +209,15 @@ export function createHudController({ state, onEnterStage, voicePlayer }) {
   });
 
   let lastPerfKey = '';
-  function updatePerfStats({ fps, calls, triangles, dpr }) {
+  function updatePerfStats({ fps, calls, triangles, dpr, tierLabel }) {
     const fpsInt = Math.round(fps || 0);
-    const key = `${fpsInt}|${calls}|${triangles}|${dpr}`;
+    const tierStr = tierLabel || '';
+    const key = `${fpsInt}|${calls}|${triangles}|${dpr}|${tierStr}`;
     if (key === lastPerfKey) return;
     lastPerfKey = key;
 
     if (perfFpsPillEl) perfFpsPillEl.textContent = `FPS: ${fpsInt}`;
+    if (perfTierEl && tierStr) perfTierEl.textContent = tierStr;
     if (perfFpsEl) perfFpsEl.textContent = `${fpsInt}`;
     if (perfCallsEl) perfCallsEl.textContent = `${calls}`;
     if (perfTrisEl) perfTrisEl.textContent = Number(triangles || 0).toLocaleString('en-US');

@@ -10,6 +10,7 @@ import {
   getPolarAscentCameraState,
   getContinuousPolarRelayState,
   getStorageTelemetry,
+  getTransferRiskCardState,
 } from './timelineMath.js';
 import { updateTechnosphereAnimation } from '../scene/aiSpheres.js';
 import { updateIntroDirector } from './introDirector.js';
@@ -33,6 +34,7 @@ const RISK_CARD_ANCHORS = [
 export function createStageRunner({
   state,
   isMobile,
+  deviceProfile,
   camera,
   controls,
   lights,
@@ -58,11 +60,22 @@ export function createStageRunner({
   const _scanTmp = new THREE.Vector3();
   const _vaultWorld = new THREE.Vector3();
   const _foldOrigin = new THREE.Vector3();
-  const _foldPortal = new THREE.Vector3(-2.15, 0.1, 0.06);
+  const _foldPortal = new THREE.Vector3(-2.90, -0.35, 0.25);
   const _briefCamPos = new THREE.Vector3();
   const _briefCorner = new THREE.Vector3();
   const _orbDummy = new THREE.Object3D();
   const _orbPos = new THREE.Vector3();
+  const _pktDummy = new THREE.Object3D();
+  const _pktPos = new THREE.Vector3();
+  const _cardPos = new THREE.Vector3();
+  const _cardState = {
+    visible: false,
+    curveT: 0,
+    scale: 0.3,
+    opacity: 0,
+    absorbPulse: 0,
+  };
+  const cameraBreathingAmp = deviceProfile?.cameraBreathingAmp ?? 0.025;
 
   const _dropState = {
     posY: 0.1, scale: 1, spinY: 0, beamOpacity: 0, capsuleOpacity: 0, contractReveal: 1,
@@ -107,7 +120,7 @@ export function createStageRunner({
       return { x: 0, y: 0.25, z: isMobile ? 20.6 : 16.4, lx: 0, ly: 2.45, lz: -0.2, fov: isMobile ? 56 : 48 };
     }
     if (targetStage === STAGES.TRANSFER) {
-      return { x: 0, y: -0.7, z: isMobile ? 19.6 : 16.0, lx: 0, ly: 4.3, lz: -0.8, fov: isMobile ? 56 : 48 };
+      return { x: 0, y: -0.25, z: isMobile ? 20.6 : 17.0, lx: 0, ly: 3.7, lz: -0.8, fov: isMobile ? 56 : 48 };
     }
     if (targetStage === STAGES.ANALYSIS) {
       return { x: 0, y: -0.8, z: isMobile ? 15.8 : 12.8, lx: 0, ly: 7.1, lz: -1.3, fov: isMobile ? 56 : 48 };
@@ -143,12 +156,16 @@ export function createStageRunner({
     riskRig.absorbRing.visible = false;
     riskRig.absorbOrbsInst.visible = false;
     riskRig.briefProjGroup.visible = false;
-    riskRig.transferStreams.forEach(s => {
-      s.tube.visible = false;
-      s.tubeMat.uniforms.uOpacity.value = 0;
-    });
+    riskRig.transferCargoGroup.visible = false;
+    riskRig.transferStreamsMesh.visible = false;
+    riskRig.transferStreamMat.uniforms.uOpacity.value = 0;
+    for (let i = 0; i < riskRig.transferRiskCards.length; i++) {
+      riskRig.cardAlphaAttr.setX(i, 0);
+    }
+    riskRig.cardAlphaAttr.needsUpdate = true;
 
     cubeRig.rightCamLensMat.emissiveIntensity = 0.35;
+    cubeRig.drawProjectionTowerDisplay('ОЖИДАНИЕ', false);
     contractRig.ufoBeamGroup.visible = false;
     contractRig.contractDropCore.visible = false;
     contractRig.flipSheetGroup.visible = false;
@@ -337,7 +354,7 @@ export function createStageRunner({
   }
 
   function update(dt, t) {
-    spaceData.updateSpace(dt, t);
+    spaceData.updateSpace(dt, t, camera.position);
     cubeRig.updateEmitters(dt);
     cubeRig.portalFieldTex.offset.y -= dt * (state.stage === STAGES.SCAN ? 0.62 : 0.16);
     const tunnelSpeed = (state.stage === STAGES.VERDICT || state.stage === STAGES.BEAM_ASCENT)
@@ -345,6 +362,29 @@ export function createStageRunner({
       : ((state.stage === STAGES.SCAN || state.stage === STAGES.TRANSFER || state.stage === STAGES.ANALYSIS) ? 2.1 : 1.35);
     const tunnelBoost = (state.stage === STAGES.SCAN || state.stage === STAGES.ANALYSIS || state.stage === STAGES.VERDICT) ? 1.24 : 1.0;
     cubeRig.updateRearTunnel(t, tunnelSpeed, tunnelBoost);
+
+    let pulseLeft = 0.28 + Math.sin(t * 2.1) * 0.07;
+    let pulseRight = 0.28 + Math.cos(t * 2.1) * 0.07;
+    if (state.stage === STAGES.CONTRACT_DROP) {
+      pulseRight = 0.72 + Math.sin(t * 5.0) * 0.18;
+      cubeRig.drawProjectionTowerDisplay('МАТЕРИАЛИЗАЦИЯ', true);
+    } else if (state.stage === STAGES.CONTRACT_BRIEF) {
+      pulseRight = 0.96;
+      cubeRig.drawProjectionTowerDisplay('ПРОЕКЦИЯ В ПОЛЕ', true);
+    } else if (state.stage === STAGES.SCAN) {
+      const pageDurNow = getPageDuration(state.pageIndex);
+      const pagePNow = Math.min(state.pageTimer / pageDurNow, 1);
+      pulseLeft = pagePNow >= 0.64 ? 0.78 + Math.sin(t * 9.0) * 0.22 : 0.48;
+      pulseRight = 0.34;
+      cubeRig.drawProjectionTowerDisplay('СИНХРОНИЗАЦИЯ', false);
+    } else if (state.stage === STAGES.SCAN_PAUSED || state.stage === STAGES.TRANSFER) {
+      pulseLeft = 0.62;
+      pulseRight = 0.36;
+      cubeRig.drawProjectionTowerDisplay('СИНХРОНИЗАЦИЯ', false);
+    } else {
+      cubeRig.drawProjectionTowerDisplay('ОЖИДАНИЕ', false);
+    }
+    cubeRig.updateBufferZones(t, pulseLeft, pulseRight);
 
     const targetYaw = Math.atan2(camera.position.x, Math.max(0.6, Math.abs(camera.position.z)));
     contractRig.contractPivot.rotation.set(0, Math.min(0.36, Math.max(-0.36, targetYaw)), 0);
@@ -433,7 +473,11 @@ export function createStageRunner({
       }
 
       if (!state.userInteracting && !state.userCameraOverride && !slideTransition.active) {
-        _v2.set(0, 0.35, isMobile ? 20.8 : 16.8);
+        _v2.set(
+          Math.sin(t * 0.62) * cameraBreathingAmp * 1.4,
+          0.35 + Math.cos(t * 0.85) * cameraBreathingAmp,
+          isMobile ? 20.8 : 16.8
+        );
         _v3.set(0, 2.45, -0.2);
         dampCam(_v2, _v3, 2.6, dt);
       }
@@ -486,7 +530,11 @@ export function createStageRunner({
       bArr.needsUpdate = true;
 
       if (!state.userInteracting && !state.userCameraOverride && !slideTransition.active) {
-        _v2.set(0, 0.25, isMobile ? 20.6 : 16.6);
+        _v2.set(
+          Math.sin(t * 0.62) * cameraBreathingAmp * 1.4,
+          0.25 + Math.cos(t * 0.85) * cameraBreathingAmp,
+          isMobile ? 20.6 : 16.6
+        );
         _v3.set(0, 2.45, -0.2);
         dampCam(_v2, _v3, 2.6, dt);
       }
@@ -764,7 +812,11 @@ export function createStageRunner({
       }
 
       if (!state.userInteracting && !state.userCameraOverride && !slideTransition.active) {
-        _v2.set(0, 0.25, isMobile ? 20.6 : 16.4);
+        _v2.set(
+          Math.sin(t * 0.62) * cameraBreathingAmp * 1.3,
+          0.25 + Math.cos(t * 0.85) * cameraBreathingAmp,
+          isMobile ? 20.6 : 16.4
+        );
         _v3.set(0, 2.45, -0.2);
         dampCam(_v2, _v3, 2.8, dt);
       }
@@ -797,28 +849,81 @@ export function createStageRunner({
       }
     } else if (state.stage === STAGES.SCAN_PAUSED) {
       if (!state.userInteracting && !state.userCameraOverride && !slideTransition.active) {
-        _v2.set(0, 0.25, isMobile ? 20.6 : 16.4);
+        _v2.set(
+          Math.sin(t * 0.62) * cameraBreathingAmp * 1.4,
+          0.25 + Math.cos(t * 0.85) * cameraBreathingAmp,
+          isMobile ? 20.6 : 16.4
+        );
         _v3.set(0, 2.45, -0.2);
         dampCam(_v2, _v3, 2.5, dt);
       }
     } else if (state.stage === STAGES.TRANSFER) {
       const p = Math.min(state.stageTimer / STAGE_DURATIONS.transfer, 1);
       const pulseAlpha = Math.sin(p * Math.PI);
-      riskRig.transferStreams.forEach((stream, idx) => {
-        stream.tube.visible = true;
-        stream.tubeMat.uniforms.uTime.value = t + idx * 0.22;
-        stream.tubeMat.uniforms.uOpacity.value = 0.88 * pulseAlpha;
-      });
+      riskRig.transferStreamsMesh.visible = true;
+      riskRig.transferStreamMat.uniforms.uTime.value = t;
+      riskRig.transferStreamMat.uniforms.uOpacity.value = 0.88 * pulseAlpha;
+
+      // Проекции 5 поглощённых рисков + импульсные пакеты поднимаются от агентов к главной ИИ-сфере
+      riskRig.transferCargoGroup.visible = true;
+      let maxAbsorbPulse = 0;
+      for (let i = 0; i < riskRig.transferRiskCards.length; i++) {
+        const card = riskRig.transferRiskCards[i];
+        getTransferRiskCardState(p, i, riskRig.transferRiskCards.length, _cardState);
+        if (_cardState.absorbPulse > maxAbsorbPulse) maxAbsorbPulse = _cardState.absorbPulse;
+        if (_cardState.visible) {
+          const stream = riskRig.transferStreams[card.agentIndex] || riskRig.transferStreams[0];
+          stream.curve.getPointAt(Math.min(1, Math.max(0, _cardState.curveT)), _cardPos);
+          _cardPos.z += Math.sin(_cardState.curveT * Math.PI) * 0.42;
+          _cardPos.y += (i % 2 === 0 ? 0.14 : -0.14) * Math.sin(_cardState.curveT * Math.PI);
+          _pktDummy.position.copy(_cardPos);
+          _pktDummy.quaternion.copy(camera.quaternion);
+          _pktDummy.scale.setScalar(_cardState.scale);
+          _pktDummy.updateMatrix();
+          riskRig.transferCardsInst.setMatrixAt(i, _pktDummy.matrix);
+          riskRig.cardAlphaAttr.setX(i, _cardState.opacity * 0.96);
+        } else {
+          _pktDummy.position.set(0, -999, 0);
+          _pktDummy.scale.setScalar(0.0001);
+          _pktDummy.updateMatrix();
+          riskRig.transferCardsInst.setMatrixAt(i, _pktDummy.matrix);
+          riskRig.cardAlphaAttr.setX(i, 0);
+        }
+      }
+      riskRig.transferCardsInst.instanceMatrix.needsUpdate = true;
+      riskRig.cardAlphaAttr.needsUpdate = true;
+
+      for (let k = 0; k < riskRig.transferPacketCount; k++) {
+        const stream = riskRig.transferStreams[k % riskRig.transferStreams.length];
+        const u = (t * 0.58 + k / riskRig.transferPacketCount) % 1;
+        stream.curve.getPointAt(u, _pktPos);
+        _pktDummy.position.copy(_pktPos);
+        _pktDummy.quaternion.identity();
+        const sPkt = (0.55 + 0.75 * Math.sin(u * Math.PI)) * Math.max(0.15, pulseAlpha);
+        _pktDummy.scale.setScalar(sPkt);
+        _pktDummy.updateMatrix();
+        riskRig.transferPacketInst.setMatrixAt(k, _pktDummy.matrix);
+      }
+      riskRig.transferPacketInst.instanceMatrix.needsUpdate = true;
+
       aiRig.agentSpheres.forEach(a => a.setArmorAperture?.(0.55 * pulseAlpha));
-      aiRig.flagshipSphere.setArmorAperture?.(0.35 + p * 0.45);
+      aiRig.flagshipSphere.setArmorAperture?.(0.35 + p * 0.45 + maxAbsorbPulse * 0.12);
+      aiRig.flagshipSphere.coreMat.emissiveIntensity = 1.9 + maxAbsorbPulse * 1.25;
+      lights.flagshipLight.intensity = 5.5 + maxAbsorbPulse * 2.1;
 
       if (!state.userInteracting && !state.userCameraOverride && !slideTransition.active) {
-        _v2.set(0, -0.7, isMobile ? 19.6 : 16.0);
-        _v3.set(0, 4.3, -0.8);
+        _v2.set(
+          Math.sin(t * 0.62) * cameraBreathingAmp * 1.4,
+          -0.25 + Math.cos(t * 0.85) * cameraBreathingAmp,
+          isMobile ? 20.6 : 17.0
+        );
+        _v3.set(0, 3.7, -0.8);
         dampCam(_v2, _v3, 2.4, dt);
       }
 
       if (p >= 1) {
+        riskRig.transferCargoGroup.visible = false;
+        riskRig.transferStreamsMesh.visible = false;
         enterStage(STAGES.ANALYSIS, 'finale');
       }
     } else if (state.stage === STAGES.ANALYSIS) {

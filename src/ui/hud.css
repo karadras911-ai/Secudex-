@@ -354,7 +354,7 @@ body.intro-cinematic-active #perf-diag-wrap {
 
 #perf-diag-panel {
   display: none;
-  min-width: 176px;
+  min-width: 214px;
   padding: 9px 11px;
   border-radius: 10px;
   background: linear-gradient(180deg, rgba(14, 16, 34, 0.96), rgba(7, 8, 20, 0.98));

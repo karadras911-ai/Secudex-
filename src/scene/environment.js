@@ -4,10 +4,22 @@ import { prepareGeometry, mergePreparedGeometries } from '../core/geometryMerge.
 import { createTunnelPulseLinesMat } from '../core/shaders.js';
 import { LOGO_ASSET_URL, CUBE_SIZE } from '../config/constants.js';
 
-export function createBalancedSpace(scene, isMobile) {
+export function createBalancedSpace(scene, deviceProfileOrIsMobile) {
+  const isMobile = typeof deviceProfileOrIsMobile === 'boolean'
+    ? deviceProfileOrIsMobile
+    : Boolean(deviceProfileOrIsMobile?.isMobileLayout);
+  const profile = typeof deviceProfileOrIsMobile === 'object' && deviceProfileOrIsMobile !== null
+    ? deviceProfileOrIsMobile
+    : {
+      starCount: isMobile ? 1600 : 2600,
+      galaxyParticleScale: isMobile ? 0.72 : 1.0,
+      galaxyNebulaLayers: isMobile ? 1 : 2,
+      parallaxDepthMul: isMobile ? 0.65 : 1.0,
+    };
+
   const spaceGroup = new THREE.Group();
 
-  const starCount = 2200;
+  const starCount = profile.starCount || 2200;
   const sPos = new Float32Array(starCount * 3);
   const sCol = new Float32Array(starCount * 3);
   const sSeed = new Float32Array(starCount * 3);
@@ -15,20 +27,31 @@ export function createBalancedSpace(scene, isMobile) {
     new THREE.Color(0xffffff),
     new THREE.Color(0xc4b5fd),
     new THREE.Color(0x93c5fd),
+    new THREE.Color(0xfde68a),
     new THREE.Color(0xe879f9),
+    new THREE.Color(0x67e8f9),
   ];
   for (let i = 0; i < starCount; i++) {
-    const r = 28 + Math.random() * 78;
+    const layer = i % 10;
+    let r;
+    if (layer === 0) {
+      r = 21 + Math.random() * 14; // передний слой параллакса
+    } else if (layer < 5) {
+      r = 36 + Math.random() * 44; // средний глубокий слой
+    } else {
+      r = 80 + Math.random() * 78; // дальняя космическая бездна
+    }
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
     sPos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
     sPos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta) + 8;
-    sPos[i * 3 + 2] = r * Math.cos(phi) - 10;
+    sPos[i * 3 + 2] = r * Math.cos(phi) - 12;
     const col = palette[i % palette.length];
-    sCol[i * 3] = col.r; sCol[i * 3 + 1] = col.g; sCol[i * 3 + 2] = col.b;
+    const dim = layer >= 5 ? 0.72 : 1.0;
+    sCol[i * 3] = col.r * dim; sCol[i * 3 + 1] = col.g * dim; sCol[i * 3 + 2] = col.b * dim;
     sSeed[i * 3] = Math.random() * Math.PI * 2;
-    sSeed[i * 3 + 1] = 0.8 + Math.random() * 2.6;
-    sSeed[i * 3 + 2] = 0.72 + Math.random() * 0.85;
+    sSeed[i * 3 + 1] = 0.7 + Math.random() * 2.5;
+    sSeed[i * 3 + 2] = (layer === 0 ? 1.15 : (layer >= 5 ? 0.52 : 0.78)) + Math.random() * 0.55;
   }
 
   const starOrbTex = (() => {
@@ -47,22 +70,6 @@ export function createBalancedSpace(scene, isMobile) {
     return tex;
   })();
 
-  const nebulaCoreTex = (() => {
-    const c = document.createElement('canvas');
-    c.width = c.height = 128;
-    const ctx = c.getContext('2d');
-    const g = ctx.createRadialGradient(64, 64, 1, 64, 64, 63);
-    g.addColorStop(0, 'rgba(255,252,244,0.96)');
-    g.addColorStop(0.22, 'rgba(226,232,255,0.58)');
-    g.addColorStop(0.55, 'rgba(148,163,255,0.18)');
-    g.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 128, 128);
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
-  })();
-
   const sGeo = new THREE.BufferGeometry();
   sGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
   sGeo.setAttribute('aStarColor', new THREE.BufferAttribute(sCol, 3));
@@ -71,7 +78,7 @@ export function createBalancedSpace(scene, isMobile) {
   const starMat = new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
-      uPointSize: { value: isMobile ? 18.0 : 22.0 },
+      uPointSize: { value: isMobile ? 18.0 : 23.0 },
       uMap: { value: starOrbTex },
     },
     vertexShader: `
@@ -83,9 +90,14 @@ export function createBalancedSpace(scene, isMobile) {
       varying float vTwinkle;
       void main() {
         vColor = aStarColor;
-        vTwinkle = 0.66 + 0.34 * sin(uTime * aSeed.y + aSeed.x);
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = clamp((uPointSize * aSeed.z * (0.88 + 0.16 * vTwinkle)) / max(1.0, -mvPosition.z * 0.08), 1.6, 8.0);
+        vTwinkle = 0.62 + 0.38 * sin(uTime * aSeed.y + aSeed.x);
+        vec3 drifted = position + vec3(
+          sin(uTime * 0.08 + aSeed.x) * 0.35,
+          cos(uTime * 0.06 + aSeed.x * 1.3) * 0.25,
+          0.0
+        );
+        vec4 mvPosition = modelViewMatrix * vec4(drifted, 1.0);
+        gl_PointSize = clamp((uPointSize * aSeed.z * (0.86 + 0.18 * vTwinkle)) / max(1.0, -mvPosition.z * 0.075), 1.4, 8.6);
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -96,7 +108,7 @@ export function createBalancedSpace(scene, isMobile) {
       void main() {
         vec4 tex = texture2D(uMap, gl_PointCoord);
         if (tex.a < 0.02) discard;
-        gl_FragColor = vec4(vColor * tex.rgb, tex.a * 0.88 * vTwinkle);
+        gl_FragColor = vec4(vColor * tex.rgb, tex.a * 0.90 * vTwinkle);
       }
     `,
     transparent: true,
@@ -112,14 +124,14 @@ export function createBalancedSpace(scene, isMobile) {
     const hCol = new THREE.Color(haloColorHex);
     const gHalo = ctx.createRadialGradient(128, 128, 2, 128, 128, 126);
     gHalo.addColorStop(0, `rgba(${Math.round(hCol.r * 255)}, ${Math.round(hCol.g * 255)}, ${Math.round(hCol.b * 255)}, ${haloOp})`);
-    gHalo.addColorStop(0.55, `rgba(${Math.round(hCol.r * 255)}, ${Math.round(hCol.g * 255)}, ${Math.round(hCol.b * 255)}, ${(haloOp * 0.35).toFixed(3)})`);
+    gHalo.addColorStop(0.45, `rgba(${Math.round(hCol.r * 255)}, ${Math.round(hCol.g * 255)}, ${Math.round(hCol.b * 255)}, ${(haloOp * 0.42).toFixed(3)})`);
     gHalo.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = gHalo;
     ctx.fillRect(0, 0, 256, 256);
 
-    const gCore = ctx.createRadialGradient(128, 128, 1, 128, 128, 72);
+    const gCore = ctx.createRadialGradient(128, 128, 1, 128, 128, 76);
     gCore.addColorStop(0, `rgba(${Math.round(cCol.r * 255)}, ${Math.round(cCol.g * 255)}, ${Math.round(cCol.b * 255)}, ${coreOp})`);
-    gCore.addColorStop(0.35, `rgba(${Math.round(cCol.r * 255)}, ${Math.round(cCol.g * 255)}, ${Math.round(cCol.b * 255)}, ${(coreOp * 0.42).toFixed(3)})`);
+    gCore.addColorStop(0.32, `rgba(${Math.round(cCol.r * 255)}, ${Math.round(cCol.g * 255)}, ${Math.round(cCol.b * 255)}, ${(coreOp * 0.45).toFixed(3)})`);
     gCore.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = gCore;
     ctx.fillRect(0, 0, 256, 256);
@@ -129,10 +141,38 @@ export function createBalancedSpace(scene, isMobile) {
     return tex;
   };
 
+  const makeGalaxyNebulaDiskTex = (innerHex, outerHex, arms) => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const ctx = c.getContext('2d');
+    const cIn = new THREE.Color(innerHex);
+    const cOut = new THREE.Color(outerHex);
+    ctx.clearRect(0, 0, 256, 256);
+    for (let a = 0; a < arms; a++) {
+      for (let step = 4; step < 96; step += 2) {
+        const t = step / 96;
+        const ang = (a * Math.PI * 2) / arms + Math.log(1 + t * 4.2) * 2.1;
+        const px = 128 + Math.cos(ang) * step * 1.15;
+        const py = 128 + Math.sin(ang) * step * 1.15;
+        const rad = 14 + t * 24;
+        const mixCol = cIn.clone().lerp(cOut, t);
+        const alpha = (1 - t) * 0.085;
+        const g = ctx.createRadialGradient(px, py, 1, px, py, rad);
+        g.addColorStop(0, `rgba(${Math.round(mixCol.r * 255)},${Math.round(mixCol.g * 255)},${Math.round(mixCol.b * 255)},${alpha.toFixed(3)})`);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(px - rad, py - rad, rad * 2, rad * 2);
+      }
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  };
+
   const createRealisticGalaxy = (cfg) => {
     const tiltGroup = new THREE.Group();
     const diskGroup = new THREE.Group();
-    const count = cfg.count;
+    const count = Math.max(900, Math.round(cfg.count * (profile.galaxyParticleScale || 1.0)));
     const gPos = new Float32Array(count * 3);
     const gCol = new Float32Array(count * 3);
     const tmpCol = new THREE.Color();
@@ -141,21 +181,29 @@ export function createBalancedSpace(scene, isMobile) {
       const arm = i % cfg.arms;
       const radialT = Math.pow(Math.random(), cfg.radialPow);
       const dist = radialT * cfg.radius;
-      const isCoreBulge = radialT < 0.16;
+      const isCoreBulge = radialT < 0.18;
+      const isHaloCluster = i % 14 === 0;
 
       let px, py, pz;
-      if (isCoreBulge) {
+      if (isHaloCluster) {
         const theta = Math.random() * Math.PI * 2;
-        const bulgeR = Math.pow(Math.random(), 0.7) * cfg.radius * 0.18;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const hr = (0.18 + Math.random() * 0.72) * cfg.radius;
+        px = hr * Math.sin(phi) * Math.cos(theta);
+        py = hr * Math.cos(phi) * 0.42;
+        pz = hr * Math.sin(phi) * Math.sin(theta);
+      } else if (isCoreBulge) {
+        const theta = Math.random() * Math.PI * 2;
+        const bulgeR = Math.pow(Math.random(), 0.7) * cfg.radius * 0.21;
         px = Math.cos(theta) * bulgeR * cfg.barStretch;
-        py = (Math.random() - 0.5) * 0.72 * (1 - bulgeR / (cfg.radius * 0.25));
+        py = (Math.random() - 0.5) * 1.15 * (1 - bulgeR / (cfg.radius * 0.28));
         pz = Math.sin(theta) * bulgeR;
       } else {
         const logAngle = Math.log(1 + dist * cfg.twist) * cfg.armTightness;
         const scatter = (Math.random() - 0.5) * (0.28 + radialT * cfg.scatterScale);
         const angle = logAngle + (arm * Math.PI * 2) / cfg.arms + scatter;
         px = Math.cos(angle) * dist;
-        py = (Math.random() - 0.5) * (0.42 / (1 + dist * 0.45));
+        py = (Math.random() - 0.5) * (0.68 / (1 + dist * 0.34));
         pz = Math.sin(angle) * dist;
       }
 
@@ -170,7 +218,7 @@ export function createBalancedSpace(scene, isMobile) {
       } else {
         tmpCol.copy(cfg.outerColor).lerp(cfg.haloColor, (radialT - 0.65) / 0.35);
       }
-      const lum = 0.68 + Math.random() * 0.32;
+      const lum = (isHaloCluster ? 0.55 : 0.68) + Math.random() * 0.34;
       gCol[i * 3] = tmpCol.r * lum;
       gCol[i * 3 + 1] = tmpCol.g * lum;
       gCol[i * 3 + 2] = tmpCol.b * lum;
@@ -189,6 +237,23 @@ export function createBalancedSpace(scene, isMobile) {
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     })));
+
+    if ((profile.galaxyNebulaLayers || 1) >= 2) {
+      const dustTex = makeGalaxyNebulaDiskTex(cfg.coreGlowHex, cfg.haloGlowHex, cfg.arms);
+      const dustDisk = new THREE.Mesh(
+        new THREE.PlaneGeometry(cfg.radius * 2.1, cfg.radius * 2.1),
+        new THREE.MeshBasicMaterial({
+          map: dustTex,
+          transparent: true,
+          opacity: profile.galaxyNebulaLayers >= 3 ? 0.92 : 0.65,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        })
+      );
+      dustDisk.rotation.x = -Math.PI / 2;
+      diskGroup.add(dustDisk);
+    }
 
     const combinedGlowTex = makeGalaxyCombinedGlowTex(
       cfg.coreGlowHex, cfg.haloGlowHex, cfg.coreGlowOpacity, cfg.haloGlowOpacity
@@ -209,42 +274,42 @@ export function createBalancedSpace(scene, isMobile) {
     tiltGroup.rotation.set(...cfg.rot);
     tiltGroup.scale.setScalar(cfg.scale);
     spaceGroup.add(tiltGroup);
-    return diskGroup;
+    return { diskGroup, tiltGroup, basePos: [...cfg.pos] };
   };
 
   const gLeftSpiral = createRealisticGalaxy({
-    pos: isMobile ? [-13.2, 18.8, -47] : [-23.0, 20.6, -47],
+    pos: isMobile ? [-13.6, 19.6, -54] : [-24.5, 21.4, -56],
     rot: [0.64, 0.28, 0.34],
-    scale: isMobile ? 0.94 : 1.24,
-    count: 2200,
+    scale: isMobile ? 0.96 : 1.32,
+    count: 2300,
     arms: 2,
-    radius: 10.5,
+    radius: 10.8,
     radialPow: 1.48,
     barStretch: 1.0,
     twist: 1.35,
     armTightness: 2.85,
     scatterScale: 0.62,
-    starSize: 0.26,
-    starOpacity: 0.90,
+    starSize: 0.27,
+    starOpacity: 0.92,
     coreColor: new THREE.Color(0xfffbeb),
     midColor: new THREE.Color(0x93c5fd),
     outerColor: new THREE.Color(0x6366f1),
     haloColor: new THREE.Color(0xc084fc),
     coreGlowHex: 0xfff7ed,
-    coreGlowOpacity: 0.46,
-    coreGlowScale: [6.5, 4.4, 1],
+    coreGlowOpacity: 0.50,
+    coreGlowScale: [6.8, 4.6, 1],
     haloGlowHex: 0x60a5fa,
-    haloGlowOpacity: 0.20,
-    haloGlowScale: [13.5, 8.8, 1],
+    haloGlowOpacity: 0.24,
+    haloGlowScale: [14.5, 9.6, 1],
   });
 
   const gRightBarred = createRealisticGalaxy({
-    pos: isMobile ? [14.0, 20.4, -51] : [24.2, 22.8, -51],
+    pos: isMobile ? [14.4, 21.2, -58] : [25.6, 23.6, -60],
     rot: [1.08, -0.46, -0.42],
-    scale: isMobile ? 0.98 : 1.34,
-    count: 2500,
+    scale: isMobile ? 1.0 : 1.40,
+    count: 2600,
     arms: 4,
-    radius: 11.0,
+    radius: 11.4,
     radialPow: 1.25,
     barStretch: 1.9,
     twist: 1.32,
@@ -257,22 +322,31 @@ export function createBalancedSpace(scene, isMobile) {
     outerColor: new THREE.Color(0xfb7185),
     haloColor: new THREE.Color(0xc084fc),
     coreGlowHex: 0xfde68a,
-    coreGlowOpacity: 0.54,
-    coreGlowScale: [8.4, 3.8, 1],
+    coreGlowOpacity: 0.56,
+    coreGlowScale: [8.8, 4.1, 1],
     haloGlowHex: 0xf472b6,
-    haloGlowOpacity: 0.24,
-    haloGlowScale: [16.0, 7.2, 1],
+    haloGlowOpacity: 0.26,
+    haloGlowScale: [17.0, 7.8, 1],
   });
 
   scene.add(spaceGroup);
 
-  function updateSpace(dt, t) {
+  function updateSpace(dt, t, camPos = null) {
     starMat.uniforms.uTime.value = t;
-    gLeftSpiral.rotation.y += dt * 0.042;
-    gRightBarred.rotation.y -= dt * 0.036;
+    gLeftSpiral.diskGroup.rotation.y += dt * 0.042;
+    gRightBarred.diskGroup.rotation.y -= dt * 0.036;
+    if (camPos) {
+      const pMul = (profile.parallaxDepthMul || 1.0) * 0.035;
+      spaceGroup.rotation.y = Math.max(-0.08, Math.min(0.08, -camPos.x * pMul * 0.08));
+      spaceGroup.rotation.x = Math.max(-0.05, Math.min(0.05, camPos.y * pMul * 0.02));
+    }
   }
 
-  return { spaceGroup, galaxies: [gLeftSpiral, gRightBarred], updateSpace };
+  return {
+    spaceGroup,
+    galaxies: [gLeftSpiral.diskGroup, gRightBarred.diskGroup],
+    updateSpace,
+  };
 }
 
 export function createLogoDisplay(scene, maxAnisotropy) {
@@ -294,7 +368,7 @@ export function createLogoDisplay(scene, maxAnisotropy) {
   });
   logoMesh = new THREE.Mesh(
     new THREE.PlaneGeometry(3.1, 1.65),
-    new THREE.MeshBasicMaterial({ map: initialLogoTex, transparent: true, depthWrite: false })
+    new THREE.MeshBasicMaterial({ map: initialLogoTex, transparent: true, depthWrite: false, toneMapped: false })
   );
   logoMeshGroup.add(logoMesh);
   return logoMeshGroup;
@@ -562,6 +636,12 @@ export function createRearTunnel(cyberArmorMat, maxAnisotropy = 4) {
   innerBulkheadTopGeo.dispose();
   innerBulkheadSideGeo.dispose();
 
+  const tunnelEndCapGeo = new THREE.PlaneGeometry(tunnelSpan, tunnelSpan);
+  armorStructGeos.push(
+    buildTransformedGeo(tunnelEndCapGeo, 0, 0, -tunnelLen - 0.08, 0, 0, 0, 'XYZ', 0x030108)
+  );
+  tunnelEndCapGeo.dispose();
+
   rearTunnelGroup.add(new THREE.Mesh(mergePreparedGeometries(armorStructGeos), cyberArmorMat));
 
   // Все 14 колец импульсов объединены в 1 LineSegments draw call на GPU-шейдере
@@ -570,13 +650,6 @@ export function createRearTunnel(cyberArmorMat, maxAnisotropy = 4) {
   pulseLinesGeo.setAttribute('aRingParity', new THREE.BufferAttribute(mergedLineParity, 1));
   const pulseLinesMat = createTunnelPulseLinesMat(tunnelLen);
   rearTunnelGroup.add(new THREE.LineSegments(pulseLinesGeo, pulseLinesMat));
-
-  const tunnelEndCap = new THREE.Mesh(
-    new THREE.PlaneGeometry(tunnelSpan, tunnelSpan),
-    new THREE.MeshBasicMaterial({ color: 0x030108, side: THREE.DoubleSide })
-  );
-  tunnelEndCap.position.z = -tunnelLen - 0.08;
-  rearTunnelGroup.add(tunnelEndCap);
 
   function updateTunnel(t, pulseSpeed = 1.6, activityBoost = 1.0) {
     armorMaps.emissiveTex.offset.y = -(t * 0.14 * pulseSpeed) % 1;

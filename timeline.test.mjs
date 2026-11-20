@@ -21,6 +21,10 @@ import {
   getPagePairIndices,
   getStorageTelemetry,
   getRulerStepStates,
+  DEVICE_TIERS,
+  detectDeviceTier,
+  getDeviceProfile,
+  getTransferRiskCardState,
 } from './timeline.js';
 
 test('page scan duration accelerates progressively across pages', () => {
@@ -221,6 +225,51 @@ test('getRulerStepStates marks done/active/upcoming stages and includes live ris
   assert.equal(steps[3].status, 'upcoming');
   assert.ok(steps[2].detailLines.some(l => /лист 3\/5/i.test(l)));
   assert.ok(steps[2].detailLines.some(l => /40%/.test(l)));
+});
+
+test('device tier classification distinguishes weak phone, laptop, and desktop PC with explicit override', () => {
+  assert.equal(detectDeviceTier({ width: 390, height: 844, cores: 4, memoryGb: 4, coarsePointer: true }), DEVICE_TIERS.MOBILE);
+  assert.equal(detectDeviceTier({ width: 1280, height: 720, cores: 4, memoryGb: 8, coarsePointer: false }), DEVICE_TIERS.LAPTOP);
+  assert.equal(detectDeviceTier({ width: 1440, height: 900, cores: 8, memoryGb: 8, coarsePointer: false }), DEVICE_TIERS.PC);
+  assert.equal(detectDeviceTier({ width: 1440, height: 900, cores: 8, memoryGb: 8, forcedTier: 'mobile' }), DEVICE_TIERS.MOBILE);
+
+  const pc = getDeviceProfile({ width: 1440, height: 900, cores: 8, memoryGb: 8 });
+  const mob = getDeviceProfile({ width: 390, height: 844, cores: 4, memoryGb: 4, coarsePointer: true });
+  assert.ok(pc.starCount > mob.starCount);
+  assert.ok(pc.galaxyNebulaLayers > mob.galaxyNebulaLayers);
+  assert.ok(pc.maxDpr > mob.maxDpr);
+  assert.equal(mob.anamorphicStreak, false);
+  assert.equal(pc.anamorphicStreak, true);
+});
+
+test('computeCinemaOptics scales bloom and anamorphic flare by device profile while keeping aperture 0', () => {
+  const pc = getDeviceProfile({ width: 1920, height: 1080, cores: 12, memoryGb: 16 });
+  const mob = getDeviceProfile({ width: 390, height: 844, cores: 4, memoryGb: 2, coarsePointer: true });
+
+  const pcOpt = computeCinemaOptics(STAGES.VERDICT, 15, false, pc);
+  const mobOpt = computeCinemaOptics(STAGES.VERDICT, 15, false, mob);
+  assert.equal(pcOpt.aperture, 0);
+  assert.equal(mobOpt.aperture, 0);
+  assert.ok(pcOpt.bloomStrength > mobOpt.bloomStrength);
+  assert.ok(pcOpt.bloomStrength <= 0.28);
+  assert.ok(pcOpt.anamorphicAmount > 0);
+  assert.equal(mobOpt.anamorphicAmount, 0);
+});
+
+test('getTransferRiskCardState staggers absorbed risk projections along transfer curves cleanly', () => {
+  const firstEarly = getTransferRiskCardState(0.08, 0, 5);
+  const lastEarly = getTransferRiskCardState(0.08, 4, 5);
+  assert.equal(firstEarly.visible, true);
+  assert.equal(lastEarly.visible, false);
+
+  const midCard = getTransferRiskCardState(0.55, 2, 5);
+  assert.equal(midCard.visible, true);
+  assert.ok(midCard.curveT > 0.2 && midCard.curveT < 0.9);
+  assert.ok(midCard.opacity > 0.5);
+
+  const arriving = getTransferRiskCardState(0.90, 4, 5);
+  assert.equal(arriving.visible, true);
+  assert.ok(arriving.absorbPulse > 0);
 });
 
 
